@@ -58,3 +58,15 @@ body {
 
 button { cursor: pointer; }
 input[type="number"]::-webkit-inner-spin-button { opacity: 1; }
+
+/* ── HL再生アニメーション ── */
+/* 塗りつぶしのみpulse（枠は維持） */
+@keyframes lc-hl-pulse {
+  from { opacity: 0.25; }
+  to   { opacity: 0.72; }
+}
+/* 再生インジケータードット */
+@keyframes lc-dot-blink {
+  from { opacity: 0.4; }
+  to   { opacity: 1.0; }
+}

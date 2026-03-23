@@ -4,24 +4,15 @@ import HlEditor     from "./HlEditor.jsx";
 import AiPanel      from "./AiPanel.jsx";
 import { fmt } from "../utils/helpers.js";
 
-/**
- * 台本1文カード
- * - テキスト直接編集（contentEditable）
- * - ✨AI修正 / 🔦HL設定 ボタン（常時薄く、ホバー・選択で濃く）
- * - 🗑 削除ボタン（右上）
- * - HLサマリーバー（テキスト下、動画モード時のみ）
- * - タイミング編集（音声モード時のみ）
- * - AIパネル / HLエディタ（選択時に展開）
- */
 export default function SentenceCard({
   sent, idx, hl, isSel, isPlay, drawMode, drawSentId,
-  dispatch, addToast,
-  showHl = true,   // false のとき HL関連UIを非表示（音声モード）
+  dispatch, addToast, requestConfirm,
+  showHl = true,
 }) {
-  const [hlOpen, setHlOpen] = useState(false);
-  const [aiOpen, setAiOpen] = useState(false);
+  const [hlOpen,     setHlOpen]     = useState(false);
+  const [aiOpen,     setAiOpen]     = useState(false);
   const [timingOpen, setTimingOpen] = useState(false);
-  const [txt, setTxt] = useState(sent.text);
+  const [txt,        setTxt]        = useState(sent.text);
   const cardRef = useRef(null);
 
   useEffect(() => { if (!isSel) { setHlOpen(false); setAiOpen(false); setTimingOpen(false); } }, [isSel]);
@@ -46,6 +37,16 @@ export default function SentenceCard({
     transition: "opacity .15s",
   };
 
+  const handleDelete = (e) => {
+    e.stopPropagation();
+    requestConfirm({
+      title:        "文を削除",
+      message:      `「${sent.text.substring(0, 40)}${sent.text.length > 40 ? "…" : ""}」\nを削除しますか？この操作は取り消せません。`,
+      confirmLabel: "削除",
+      onConfirm:    () => dispatch({ type: "DEL_SENT", v: sent.id }),
+    });
+  };
+
   return (
     <div
       ref={cardRef}
@@ -65,7 +66,6 @@ export default function SentenceCard({
           <span style={{ fontFamily: "var(--fm)", fontSize: 9, color: "var(--tm)", background: "var(--s3)", padding: "1px 5px", borderRadius: 3 }}>
             {fmt(sent.start_sec)}–{fmt(sent.end_sec)}
           </span>
-          {/* 音声モード：タイミング編集ボタン */}
           {!showHl && (
             <button
               onClick={(e) => { e.stopPropagation(); sel(); setTimingOpen((p) => !p); }}
@@ -78,7 +78,6 @@ export default function SentenceCard({
 
         {/* テキスト + オーバーレイボタン */}
         <div style={{ position: "relative", marginBottom: 6 }}>
-          {/* 左上：AI修正・HL設定（音声モードはHLなし） */}
           <div style={{ position: "absolute", top: 0, left: 0, display: "flex", gap: 3, pointerEvents: "all", zIndex: 5 }}>
             <button
               onClick={(e) => { e.stopPropagation(); sel(); setAiOpen((p) => !p); setHlOpen(false); setTimingOpen(false); }}
@@ -95,19 +94,14 @@ export default function SentenceCard({
               </button>
             )}
           </div>
-          {/* 右上：削除 */}
           <div style={{ position: "absolute", top: 0, right: 0, pointerEvents: "all", zIndex: 5 }}>
             <button
-              onClick={(e) => {
-                e.stopPropagation();
-                if (confirm("この文を削除しますか？")) dispatch({ type: "DEL_SENT", v: sent.id });
-              }}
+              onClick={handleDelete}
               style={{ ...ovBtnBase, background: "rgba(224,91,91,.16)", borderColor: "rgba(224,91,91,.3)", color: "var(--rd)" }}
             >
               🗑
             </button>
           </div>
-          {/* テキスト本体 */}
           <div
             contentEditable
             suppressContentEditableWarning
@@ -121,7 +115,6 @@ export default function SentenceCard({
           </div>
         </div>
 
-        {/* HLサマリーバー（動画モード時のみ） */}
         {showHl && (
           <HlSummaryBar
             hl={hl}
@@ -130,12 +123,8 @@ export default function SentenceCard({
           />
         )}
 
-        {/* タイミング編集（音声モード時のみ） */}
-        {timingOpen && !showHl && (
-          <TimingEditor sent={sent} dispatch={dispatch} />
-        )}
+        {timingOpen && !showHl && <TimingEditor sent={sent} dispatch={dispatch} />}
 
-        {/* AIパネル */}
         {aiOpen && (
           <AiPanel
             text={sent.text}
@@ -144,7 +133,6 @@ export default function SentenceCard({
           />
         )}
 
-        {/* HLエディタ */}
         {hlOpen && showHl && (
           <HlEditor
             sid={sent.id}
@@ -159,10 +147,6 @@ export default function SentenceCard({
   );
 }
 
-/**
- * タイミング編集（音声モード専用）
- * start_sec / end_sec を直接入力
- */
 function TimingEditor({ sent, dispatch }) {
   const [start, setStart] = useState(String(sent.start_sec));
   const [end,   setEnd]   = useState(String(sent.end_sec));
@@ -174,7 +158,7 @@ function TimingEditor({ sent, dispatch }) {
     dispatch({ type: "UPD_SENT_TIME", id: sent.id, start_sec: s, end_sec: e });
   };
 
-  const inputSty = {
+  const iSty = {
     width: 72, padding: "4px 6px",
     background: "var(--s3)", border: "1px solid var(--bd)",
     borderRadius: 4, color: "var(--tp)",
@@ -187,12 +171,12 @@ function TimingEditor({ sent, dispatch }) {
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <div>
           <div style={{ fontFamily: "var(--fm)", fontSize: 9, color: "var(--tm)", marginBottom: 3 }}>開始</div>
-          <input type="number" value={start} step="0.1" min="0" onChange={(e) => setStart(e.target.value)} style={inputSty} />
+          <input type="number" value={start} step="0.1" min="0" onChange={(e) => setStart(e.target.value)} style={iSty} />
         </div>
         <div style={{ color: "var(--tm)", marginTop: 14 }}>→</div>
         <div>
           <div style={{ fontFamily: "var(--fm)", fontSize: 9, color: "var(--tm)", marginBottom: 3 }}>終了</div>
-          <input type="number" value={end} step="0.1" min="0" onChange={(e) => setEnd(e.target.value)} style={inputSty} />
+          <input type="number" value={end} step="0.1" min="0" onChange={(e) => setEnd(e.target.value)} style={iSty} />
         </div>
         <button
           onClick={apply}
