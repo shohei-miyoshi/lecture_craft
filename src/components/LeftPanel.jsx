@@ -1,18 +1,18 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import Seg from "./Seg.jsx";
 import { DETAIL_LABELS, DIFF_LABELS, DETAIL_VALS, DIFF_VALS, API_URL } from "../utils/constants.js";
-import { toB64, makeDemo } from "../utils/helpers.js";
+import { toB64, makeDemo, fmt } from "../utils/helpers.js";
 
 /**
  * 左パネル
- * - PDFアップロード（クリック / ドラッグ＆ドロップ）
- * - 学習者要求3軸の設定
- * - 講義メディア生成ボタン
- * - 進捗ステータス
- * - スライド一覧
+ *
+ * 変更点:
+ * - appMode は生成後ロック（モード変更には先にリセットが必要）
+ * - 書き出しパネルのJSON読み込み（インポート）を追加
  */
-export default function LeftPanel({ state, dispatch, pdfFile, setPdfFile, addToast }) {
+export default function LeftPanel({ state, dispatch, pdfFile, setPdfFile, addToast, requestConfirm }) {
   const [drag, setDrag] = useState(false);
+  const importRef = useRef(null);
 
   const handleFile = (f) => {
     if (!f || f.type !== "application/pdf") return;
@@ -20,6 +20,7 @@ export default function LeftPanel({ state, dispatch, pdfFile, setPdfFile, addToa
     addToast("in", `📑 ${f.name}`);
   };
 
+  // ── 生成 ──
   const startGen = async () => {
     if (!pdfFile) { addToast("er", "PDFをアップロードしてください"); return; }
     dispatch({ type: "SET", k: "status",    v: "proc"           });
@@ -42,25 +43,45 @@ export default function LeftPanel({ state, dispatch, pdfFile, setPdfFile, addToa
         }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      dispatch({ type: "SET", k: "progress",  v: 85             });
-      dispatch({ type: "SET", k: "statusMsg", v: "データを読み込み中..." });
+      dispatch({ type: "SET",  k: "progress",  v: 85             });
+      dispatch({ type: "SET",  k: "statusMsg", v: "データを読み込み中..." });
       dispatch({ type: "LOAD", d: await res.json() });
-      dispatch({ type: "SET", k: "progress",  v: 100   });
-      dispatch({ type: "SET", k: "status",    v: "done" });
-      dispatch({ type: "SET", k: "statusMsg", v: "生成完了" });
+      dispatch({ type: "SET",  k: "progress",  v: 100   });
+      dispatch({ type: "SET",  k: "status",    v: "done" });
+      dispatch({ type: "SET",  k: "statusMsg", v: "生成完了" });
       addToast("ok", "✅ 講義メディアを生成しました");
     } catch (err) {
-      console.warn("Backend unavailable, using demo data:", err.message);
+      console.warn("Backend unavailable:", err.message);
       dispatch({ type: "SET", k: "progress",  v: 60            });
       dispatch({ type: "SET", k: "statusMsg", v: "デモデータを準備中..." });
       await new Promise((r) => setTimeout(r, 300));
-      dispatch({ type: "LOAD", d: makeDemo() });
+      dispatch({ type: "LOAD", d: { ...makeDemo(), mode: state.appMode } });
       dispatch({ type: "SET", k: "progress",  v: 100              });
       dispatch({ type: "SET", k: "status",    v: "done"            });
       dispatch({ type: "SET", k: "statusMsg", v: "生成完了（デモ）" });
       addToast("in", "🔧 バックエンド未接続 — デモデータで表示");
     }
     setTimeout(() => dispatch({ type: "SET", k: "showProg", v: false }), 800);
+  };
+
+  // ── JSONインポート ──
+  const handleImport = (file) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = JSON.parse(e.target.result);
+        // 必須フィールドチェック
+        if (!data.sentences || !data.slides) throw new Error("invalid format");
+        // settings から appMode を復元
+        const mode = data.settings?.mode ?? data.mode ?? "hl";
+        dispatch({ type: "LOAD", d: { ...data, mode } });
+        addToast("ok", `📂 ${file.name} をインポートしました`);
+      } catch {
+        addToast("er", "JSONの形式が正しくありません");
+      }
+    };
+    reader.readAsText(file);
   };
 
   const statusStyle = {
@@ -70,6 +91,9 @@ export default function LeftPanel({ state, dispatch, pdfFile, setPdfFile, addToa
     err:  { background: "var(--rdd)", border: "1px solid rgba(224,91,91,.28)",   color: "var(--rd)" },
   }[state.status];
 
+  // appMode は生成後ロック
+  const modeLocked = state.generated;
+
   return (
     <aside style={{ width: 250, minWidth: 210, background: "var(--sur)", borderRight: "1px solid var(--bd)", display: "flex", flexDirection: "column", overflow: "hidden", flexShrink: 0 }}>
       <div style={{ flex: 1, overflowY: "auto", padding: 12 }}>
@@ -77,9 +101,9 @@ export default function LeftPanel({ state, dispatch, pdfFile, setPdfFile, addToa
         {/* ─── アップロード ─── */}
         <div style={{ fontFamily: "var(--ff)", fontSize: 9, fontWeight: 700, letterSpacing: "1.8px", textTransform: "uppercase", color: "var(--tm)", marginBottom: 8 }}>入力スライド</div>
         <div
-          onDragOver={(e) => { e.preventDefault(); setDrag(true);  }}
+          onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
           onDragLeave={() => setDrag(false)}
-          onDrop={(e)    => { e.preventDefault(); setDrag(false); handleFile(e.dataTransfer.files[0]); }}
+          onDrop={(e) => { e.preventDefault(); setDrag(false); handleFile(e.dataTransfer.files[0]); }}
           style={{ border: `2px dashed ${drag ? "var(--ac)" : "var(--bd2)"}`, borderRadius: "var(--rl)", padding: "14px 10px", textAlign: "center", cursor: "pointer", transition: "var(--tr)", position: "relative", marginBottom: 8, background: drag ? "var(--adim)" : "none" }}
         >
           <input type="file" accept=".pdf" onChange={(e) => handleFile(e.target.files[0])} style={{ position: "absolute", inset: 0, opacity: 0, cursor: "pointer" }} />
@@ -100,7 +124,14 @@ export default function LeftPanel({ state, dispatch, pdfFile, setPdfFile, addToa
 
         {/* ─── 学習者要求3軸 ─── */}
         <div style={{ height: 12 }} />
-        <div style={{ fontFamily: "var(--ff)", fontSize: 9, fontWeight: 700, letterSpacing: "1.8px", textTransform: "uppercase", color: "var(--tm)", marginBottom: 8 }}>学習者要求</div>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+          <div style={{ fontFamily: "var(--ff)", fontSize: 9, fontWeight: 700, letterSpacing: "1.8px", textTransform: "uppercase", color: "var(--tm)" }}>学習者要求</div>
+          {modeLocked && (
+            <span style={{ fontSize: 9, color: "var(--am)", background: "var(--amd)", border: "1px solid rgba(232,169,75,.3)", padding: "1px 7px", borderRadius: 10 }}>
+              🔒 生成済み
+            </span>
+          )}
+        </div>
 
         {[
           ["詳細度", "detail", DETAIL_LABELS, ["要約", "標準", "精緻"]],
@@ -121,6 +152,7 @@ export default function LeftPanel({ state, dispatch, pdfFile, setPdfFile, addToa
           </div>
         ))}
 
+        {/* 提示形態（生成後ロック） */}
         <div style={{ marginBottom: 12 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
             <span style={{ fontSize: 11, color: "var(--ts)" }}>提示形態</span>
@@ -128,17 +160,40 @@ export default function LeftPanel({ state, dispatch, pdfFile, setPdfFile, addToa
               {{ audio: "音声", video: "動画", hl: "HL動画" }[state.appMode]}
             </span>
           </div>
-          <Seg
-            opts={[{ v: "audio", l: "音声" }, { v: "video", l: "動画" }, { v: "hl", l: "HL動画" }]}
-            val={state.appMode}
-            onChange={(v) => dispatch({ type: "SET", k: "appMode", v })}
-          />
+          {modeLocked ? (
+            // ロック中は選択不可・現在のモードを表示
+            <div style={{ padding: "7px 10px", background: "var(--s2)", border: "1px solid var(--bd)", borderRadius: "var(--r)", fontSize: 11, color: "var(--ts)", display: "flex", alignItems: "center", gap: 6 }}>
+              <span>{{ audio: "🔊", video: "📹", hl: "🎬" }[state.appMode]}</span>
+              <span>{{ audio: "音声のみ", video: "動画", hl: "HL動画" }[state.appMode]}</span>
+              <span style={{ marginLeft: "auto", fontSize: 9, color: "var(--tm)" }}>リセット後に変更</span>
+            </div>
+          ) : (
+            <Seg
+              opts={[{ v: "audio", l: "音声" }, { v: "video", l: "動画" }, { v: "hl", l: "HL動画" }]}
+              val={state.appMode}
+              onChange={(v) => dispatch({ type: "SET", k: "appMode", v })}
+            />
+          )}
         </div>
 
         {/* ─── 生成ボタン ─── */}
-        <button onClick={startGen} style={{ width: "100%", padding: 9, background: "var(--ac)", border: "none", borderRadius: "var(--r)", color: "#fff", fontFamily: "var(--fb)", fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", gap: 5, marginBottom: 10 }}>
+        <button onClick={startGen} style={{ width: "100%", padding: 9, background: "var(--ac)", border: "none", borderRadius: "var(--r)", color: "#fff", fontFamily: "var(--fb)", fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", gap: 5, marginBottom: 6 }}>
           ⚡ 講義メディア生成
         </button>
+
+        {/* ─── JSONインポート ─── */}
+        <div style={{ position: "relative", marginBottom: 10 }}>
+          <input
+            ref={importRef}
+            type="file"
+            accept=".json"
+            onChange={(e) => handleImport(e.target.files[0])}
+            style={{ position: "absolute", inset: 0, opacity: 0, cursor: "pointer" }}
+          />
+          <button style={{ width: "100%", padding: "6px 9px", background: "none", border: "1px solid var(--bd2)", borderRadius: "var(--r)", color: "var(--ts)", fontFamily: "var(--fb)", fontSize: 11, display: "flex", alignItems: "center", justifyContent: "center", gap: 5 }}>
+            📂 保存済みJSONをインポート
+          </button>
+        </div>
 
         {/* ─── ステータス ─── */}
         <div style={{ ...statusStyle, padding: "6px 8px", borderRadius: "var(--r)", fontSize: 10, display: "flex", alignItems: "center", gap: 5, marginBottom: 4 }}>
@@ -156,7 +211,6 @@ export default function LeftPanel({ state, dispatch, pdfFile, setPdfFile, addToa
         {/* ─── スライド一覧 ─── */}
         <div style={{ height: 10 }} />
         <div style={{ fontFamily: "var(--ff)", fontSize: 9, fontWeight: 700, letterSpacing: "1.8px", textTransform: "uppercase", color: "var(--tm)", marginBottom: 8 }}>スライド一覧</div>
-
         {state.slides.length === 0 ? (
           <div style={{ color: "var(--tm)", fontSize: 10, textAlign: "center", padding: "10px 0" }}>生成後に表示</div>
         ) : (

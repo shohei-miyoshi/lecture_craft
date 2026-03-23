@@ -1,25 +1,16 @@
 import SentenceCard from "./SentenceCard.jsx";
 
-/**
- * 右パネル — 台本 + HL統合編集
- * - appMode === "audio" のとき showHl=false でHL UIを隠す
- * - 全文を表示（音声モードはスライド区切りなし）
- */
-export default function RightPanel({ state, dispatch, addToast }) {
+export default function RightPanel({ state, dispatch, addToast, requestConfirm }) {
   const isAudio  = state.appMode === "audio";
-  // 音声モード：全文表示。動画系：現在スライドの文のみ
   const curSents = isAudio
     ? state.sents
     : state.sents.filter((s) => s.slide_idx === state.curSl);
-
-  const actSent = state.sents.find(
+  const actSent  = state.sents.find(
     (s) => s.start_sec <= state.curT && state.curT < s.end_sec
   );
 
   return (
     <aside style={{ width: 380, minWidth: 340, background: "var(--sur)", borderLeft: "1px solid var(--bd)", display: "flex", flexDirection: "column", overflow: "hidden", flexShrink: 0 }}>
-
-      {/* ヘッダー */}
       <div style={{ padding: "10px 12px 8px", borderBottom: "1px solid var(--bd)", flexShrink: 0 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 3 }}>
           <span style={{ fontFamily: "var(--ff)", fontSize: 12, fontWeight: 700 }}>
@@ -36,7 +27,6 @@ export default function RightPanel({ state, dispatch, addToast }) {
         </div>
       </div>
 
-      {/* 文カード一覧 */}
       <div style={{ flex: 1, overflowY: "auto" }}>
         {curSents.length === 0 ? (
           <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 28, color: "var(--tm)", fontSize: 11, gap: 5, textAlign: "center" }}>
@@ -56,6 +46,7 @@ export default function RightPanel({ state, dispatch, addToast }) {
               drawSentId={state.drawSentId}
               dispatch={dispatch}
               addToast={addToast}
+              requestConfirm={requestConfirm}
               showHl={!isAudio}
             />
           ))

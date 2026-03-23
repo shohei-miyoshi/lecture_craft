@@ -1,8 +1,8 @@
 /**
  * LectureCraft — アプリ全状態 Reducer
  *
- * 全ての状態変更はここを経由するため、
- * HL変更が自動的にプレビュー・サマリー・ミニスライドに連動する。
+ * appMode（提示形態）は生成後にロックされる。
+ * 別のモードで再生成する場合はリセットが必要。
  */
 
 export const INITIAL_STATE = {
@@ -19,10 +19,10 @@ export const INITIAL_STATE = {
   selHl:    null,
 
   // 設定軸
-  appMode:  "hl",   // "audio" | "video" | "hl"
+  appMode:  "hl",   // "audio" | "video" | "hl"  ← 生成後ロック
   detail:   1,      // 0=要約 1=標準 2=精緻
   level:    1,      // 0=入門 1=基礎 2=発展
-  prevMode: "hl",   // プレビュー表示モード ("hl" | "plain" | "audio")
+  prevMode: "hl",   // プレビュー表示モード
 
   // 生成ステータス
   status:    "idle",
@@ -37,33 +37,35 @@ export const INITIAL_STATE = {
   // 再生
   curT:      0,
   playing:   false,
-  playSpeed: 1.0,   // 再生速度: 0.5 / 1.0 / 1.5 / 2.0
+  playSpeed: 1.0,
 };
 
 export function reducer(state, action) {
   switch (action.type) {
 
-    // ── データロード ──
+    // ── データロード（生成・インポート共通） ──
     case "LOAD": {
       const sents  = action.d.sentences ?? [];
       const totDur = action.d.total_duration
         ?? (sents.length ? Math.max(...sents.map((s) => s.end_sec ?? 0)) : 60);
-      // appModeに合わせてprevModeも初期化
-      const prevMode = action.d.mode === "audio" ? "audio"
-        : action.d.mode === "video" ? "plain" : "hl";
+      // ロードされたデータに mode が含まれていれば appMode も上書き
+      const appMode = action.d.mode ?? state.appMode;
+      const prevMode = appMode === "audio" ? "audio"
+        : appMode === "video" ? "plain" : "hl";
       return {
         ...state,
         slides:    action.d.slides ?? [],
         sents,
         hls:       action.d.highlights ?? [],
         totDur,
+        appMode,
         curSl:     0,
         generated: true,
         selSent:   null,
         selHl:     null,
         curT:      0,
         playing:   false,
-        prevMode:  state.prevMode !== "hl" ? state.prevMode : prevMode,
+        prevMode,
       };
     }
 
@@ -133,10 +135,10 @@ export function reducer(state, action) {
       const id = `s_${Date.now()}`;
       return {
         ...state,
-        sents:  [...state.sents, {
+        sents: [...state.sents, {
           id,
           slide_idx: state.appMode === "audio" ? 0 : state.curSl,
-          text: "（新しい文）",
+          text:      "（新しい文）",
           start_sec: state.totDur,
           end_sec:   state.totDur + 3,
         }],
@@ -158,7 +160,6 @@ export function reducer(state, action) {
         sents: state.sents.map((s) => (s.id === action.id ? { ...s, text: action.text } : s)),
       };
 
-    // タイミング更新（音声モードで使用）
     case "UPD_SENT_TIME":
       return {
         ...state,

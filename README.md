@@ -1,6 +1,6 @@
 # LectureCraft
 
-学習者要求に基づく講義スライド起点の講義メディア生成・編集システムのフロントエンドです。
+学習者要求に基づく講義スライド起点の講義メディア生成・編集システムのフロントエンドです。  
 九州大学卒業論文「学習者要求に基づく講義スライド起点の講義メディア生成の設計と評価」（三好祥平）の実験用Webアプリとして開発されました。
 
 ---
@@ -8,11 +8,31 @@
 ## 機能概要
 
 - **PDFスライドのアップロード**（ドラッグ＆ドロップ対応）
-- **3軸の学習者要求設定**：詳細度（要約的/標準的/精緻）・難易度（入門/基礎/発展）・提示形態（音声/動画/HL動画）
-- **バックエンドAPIと連携**して講義台本・ハイライト情報を生成
-- **台本編集**：テキスト直接編集 + Claude APIによるAI修正
+- **3軸の学習者要求設定**：詳細度・難易度・提示形態（音声 / 動画 / HL動画）
+- **提示形態は生成後ロック** — 学習者要求が変わると全く異なる講義が生成されるため、生成後のモード切替を制限。別モードで再生成する場合はリセットが必要
+- **台本編集**：テキスト直接編集・Claude AI修正・タイミング編集（音声モード）
 - **ハイライト編集**：プレビュー上でドラッグ描画・移動・8方向リサイズ
+- **再生プレビュー**：rAF実時間ベース、シークバードラッグ対応、再生速度変更、自動スライド切替
+- **HL再生表示**：バウンディングボックスを維持しつつ塗りつぶしのみ pulse アニメーション
+- **カスタム確認ダイアログ**：ブラウザ標準 confirm() を使わないアプリ独自ダイアログ
+- **JSONエクスポート / インポート**：複数の講義データを保持・切り替え可能
 - **書き出し**：JSON / テキスト（フロントのみ）、動画 / 音声（バックエンド連携）
+
+---
+
+## 複数講義の保持・切り替え
+
+講義スライドや学習者要求が異なる複数の講義データを保持したい場合は、**JSONエクスポート／インポート機能**を使います。
+
+```
+1. 講義Aを生成・編集する
+2. 「書き出し」→「編集データ（JSON）」でエクスポートし、ファイルを保存
+3. 「↺ リセット」でアプリを初期化
+4. 講義Bを生成・編集する
+5. 講義Aに戻りたいとき → 左パネル「📂 保存済みJSONをインポート」
+```
+
+インポートすると、生成時の提示形態（audio / video / hl）も含めて復元されます。
 
 ---
 
@@ -24,29 +44,34 @@ lecturecraft/
 │   └── favicon.svg
 ├── src/
 │   ├── components/
-│   │   ├── AiPanel.jsx        # AI修正パネル
-│   │   ├── CenterPanel.jsx    # スライドプレビュー・再生バー
-│   │   ├── ExportPanel.jsx    # 書き出しパネル
-│   │   ├── HlBox.jsx          # スライド上のHLボックス（移動・リサイズ）
-│   │   ├── HlEditor.jsx       # HL設定パネル（種別・座標・描画）
-│   │   ├── HlSummaryBar.jsx   # HLサマリーバー（台本カード下部）
-│   │   ├── LeftPanel.jsx      # アップロード・軸設定・スライド一覧
-│   │   ├── MiniSlide.jsx      # ミニスライドサムネイル（HL位置調整）
-│   │   ├── RightPanel.jsx     # 台本＋HL統合編集パネル
-│   │   ├── Seg.jsx            # セグメントコントロール
-│   │   ├── SentenceCard.jsx   # 台本1文カード
-│   │   └── ToastLayer.jsx     # トースト通知
+│   │   ├── AiPanel.jsx          # AI修正パネル
+│   │   ├── AudioView.jsx        # 音声モード専用ビュー（波形・台本スクロール）
+│   │   ├── CenterPanel.jsx      # スライドプレビュー・再生バー
+│   │   ├── ConfirmDialog.jsx    # カスタム確認ダイアログ
+│   │   ├── ExportPanel.jsx      # 書き出しパネル
+│   │   ├── HlBox.jsx            # スライド上のHLボックス（移動・リサイズ・再生アニメ）
+│   │   ├── HlEditor.jsx         # HL設定パネル（種別・座標・描画）
+│   │   ├── HlSummaryBar.jsx     # HLサマリーバー（台本カード下部）
+│   │   ├── LeftPanel.jsx        # アップロード・軸設定・スライド一覧・インポート
+│   │   ├── MiniSlide.jsx        # ミニスライドサムネイル（HL位置調整）
+│   │   ├── Playbar.jsx          # 再生コントロール（ドラッグシーク・残り時間・速度）
+│   │   ├── RightPanel.jsx       # 台本＋HL統合編集パネル
+│   │   ├── Seg.jsx              # セグメントコントロール
+│   │   ├── SentenceCard.jsx     # 台本1文カード
+│   │   ├── SlideCanvas.jsx      # スライドプレビュー＋描画
+│   │   └── ToastLayer.jsx       # トースト通知
 │   ├── hooks/
-│   │   ├── usePlayback.js     # 再生タイマーフック
-│   │   └── useToast.js        # トースト通知フック
+│   │   ├── useConfirm.js        # カスタム確認ダイアログフック
+│   │   ├── usePlayback.js       # 再生タイマー（rAF実時間ベース）
+│   │   └── useToast.js          # トースト通知フック
 │   ├── store/
-│   │   └── reducer.js         # アプリ全状態のReducer
+│   │   └── reducer.js           # アプリ全状態のReducer
 │   ├── utils/
-│   │   ├── constants.js       # 定数・API URL
-│   │   └── helpers.js         # ユーティリティ関数・デモデータ
-│   ├── App.jsx                # ルートコンポーネント
-│   ├── index.css              # グローバルCSS（CSS変数定義）
-│   └── main.jsx               # ReactDOMエントリポイント
+│   │   ├── constants.js         # 定数・API URL
+│   │   └── helpers.js           # ユーティリティ関数・デモデータ
+│   ├── App.jsx
+│   ├── index.css
+│   └── main.jsx
 ├── .env.example
 ├── .gitignore
 ├── index.html
@@ -57,150 +82,130 @@ lecturecraft/
 
 ---
 
-## セットアップ
-
-### 必要なもの
-
-- Node.js 18 以上
-- npm 9 以上
-
-### インストール・起動
+## ローカルセットアップ
 
 ```bash
 # 1. リポジトリをクローン
 git clone https://github.com/your-username/lecturecraft.git
 cd lecturecraft
 
-# 2. 依存パッケージをインストール
+# 2. パッケージをインストール
 npm install
 
 # 3. 環境変数を設定
 cp .env.example .env
-# .env を編集して VITE_API_URL にバックエンドのURLを設定
+# .env を開いて VITE_API_URL をバックエンドのURLに変更
 
 # 4. 開発サーバ起動
-npm run dev
-# → http://localhost:5173 で起動
+npm run dev   # → http://localhost:5173
 ```
 
-バックエンドが未接続の場合でも、デモデータ（パターン認識講義・5スライド・10文・5HL）で動作確認できます。
+バックエンド未接続でも、デモデータ（パターン認識講義）で全機能を確認できます。
+
+---
+
+## GitHub + Vercel へのデプロイ
+
+### 1. GitHubにリポジトリを作成してプッシュ
+
+```bash
+cd lecturecraft
+git init
+git add .
+git commit -m "initial commit"
+
+# GitHubでリポジトリを作成した後
+git remote add origin https://github.com/your-username/lecturecraft.git
+git branch -M main
+git push -u origin main
+```
+
+### 2. Vercel にデプロイ
+
+1. [vercel.com](https://vercel.com) にログイン（GitHubアカウントで連携）
+2. **Add New Project** → GitHubリポジトリを選択
+3. 以下の設定を確認：
+   - **Framework Preset**: `Vite`
+   - **Build Command**: `npm run build`
+   - **Output Directory**: `dist`
+4. **Environment Variables** に追加：
+   | 変数名 | 値 |
+   |---|---|
+   | `VITE_API_URL` | `https://your-backend.example.com` |
+5. **Deploy** をクリック
+
+### 3. 以降の更新
+
+```bash
+git add .
+git commit -m "update"
+git push
+```
+
+GitHubにpushするだけでVercelが自動的に再デプロイします（CI/CD）。
+
+### 4. バックエンドのデプロイ先
+
+Pythonバックエンドのデプロイには以下が使えます：
+
+| サービス | 特徴 |
+|---|---|
+| [Render](https://render.com) | 無料プランあり、Pythonに強い |
+| [Railway](https://railway.app) | セットアップが簡単 |
+| [Google Cloud Run](https://cloud.run) | コンテナ対応、スケーラブル |
+| 学内サーバ / VPS | 研究用途ならこれが最もシンプル |
 
 ---
 
 ## バックエンドAPI仕様
 
-フロントエンドは `VITE_API_URL` で指定したバックエンドサーバと通信します。
-
 ### POST `/api/generate`
 
-PDFスライドから台本・ハイライトを生成します。
+| フィールド | 値 |
+|---|---|
+| `pdf_base64` | PDFのBase64文字列 |
+| `filename` | ファイル名 |
+| `detail` | `"summary"` / `"standard"` / `"detail"` |
+| `difficulty` | `"intro"` / `"basic"` / `"advanced"` |
+| `mode` | `"audio"` / `"video"` / `"hl"` |
 
-**リクエスト**
+レスポンス例：
 ```json
 {
-  "pdf_base64":  "...",
-  "filename":    "lecture.pdf",
-  "detail":      "standard",
-  "difficulty":  "basic",
-  "mode":        "hl"
-}
-```
-
-| フィールド   | 値                                    |
-|-------------|---------------------------------------|
-| `detail`    | `"summary"` / `"standard"` / `"detail"` |
-| `difficulty`| `"intro"` / `"basic"` / `"advanced"`    |
-| `mode`      | `"audio"` / `"video"` / `"hl"`          |
-
-**レスポンス**
-```json
-{
-  "slides": [
-    { "id": "sl0", "title": "スライドタイトル", "color": "#1a2340", "image_base64": null }
-  ],
-  "sentences": [
-    { "id": "s1", "slide_idx": 0, "text": "...", "start_sec": 0, "end_sec": 5 }
-  ],
-  "highlights": [
-    { "id": "h1", "sid": "s2", "slide_idx": 0, "kind": "marker", "x": 15, "y": 28, "w": 65, "h": 42 }
-  ],
-  "total_duration": 65
+  "slides":     [{ "id": "sl0", "title": "タイトル", "color": "#1a2340", "image_base64": null }],
+  "sentences":  [{ "id": "s1", "slide_idx": 0, "text": "...", "start_sec": 0, "end_sec": 5 }],
+  "highlights": [{ "id": "h1", "sid": "s2", "slide_idx": 0, "kind": "marker", "x": 15, "y": 28, "w": 65, "h": 42 }],
+  "total_duration": 65,
+  "mode": "hl"
 }
 ```
 
 ### POST `/api/export`
 
-動画・音声ファイルを生成します。
-
-**リクエスト**
 ```json
-{
-  "type":       "video_highlight",
-  "sentences":  [...],
-  "highlights": [...]
-}
+{ "type": "video_highlight", "sentences": [...], "highlights": [...] }
 ```
-
-| `type` 値          | 説明                  |
-|--------------------|-----------------------|
-| `"video_highlight"`| ハイライト付き動画 .mp4 |
-| `"video"`          | 通常動画 .mp4          |
-| `"audio"`          | 音声のみ .mp3          |
-
-**レスポンス**: バイナリファイル（mp4 / mp3）
-
----
-
-## Vercel へのデプロイ
-
-### 1. GitHubにプッシュ
-
-```bash
-git add .
-git commit -m "initial commit"
-git push origin main
-```
-
-### 2. Vercel でインポート
-
-1. [vercel.com](https://vercel.com) にアクセス → **Add New Project**
-2. GitHubリポジトリを選択
-3. **Framework Preset**: `Vite` を選択
-4. **Environment Variables** に以下を追加：
-
-| 変数名          | 値                                      |
-|----------------|-----------------------------------------|
-| `VITE_API_URL` | `https://your-backend.example.com`      |
-
-5. **Deploy** をクリック
-
-バックエンドを別途デプロイした場合（Render / Railway / VPS など）、そのURLを `VITE_API_URL` に設定してください。
+レスポンス: バイナリ（mp4 / mp3）
 
 ---
 
 ## キーボードショートカット
 
-| キー            | 動作                     |
-|----------------|--------------------------|
-| `Space`         | 再生 / 停止              |
-| `←` / `→`      | 前 / 次のスライドに移動  |
-| `Esc`           | 描画モードをキャンセル   |
-| `Delete` / `⌫` | 選択中のHLを削除         |
+| キー | 動作 |
+|---|---|
+| `Space` | 再生 / 停止 |
+| `←` / `→` | 前 / 次スライド |
+| `Esc` | 描画モードキャンセル |
+| `Delete` / `⌫` | 選択中のHL削除 |
 
 ---
 
 ## 技術スタック
 
-| 項目           | 内容                          |
-|---------------|-------------------------------|
-| フレームワーク | React 18                      |
-| ビルドツール   | Vite 5                        |
-| 状態管理       | `useReducer`（外部ライブラリなし） |
-| スタイリング   | CSS変数（ライブラリなし）     |
-| デプロイ       | Vercel                        |
-
----
-
-## ライセンス
-
-研究用途での利用を想定しています。
+| 項目 | 内容 |
+|---|---|
+| フレームワーク | React 18 |
+| ビルドツール | Vite 5 |
+| 状態管理 | `useReducer`（外部ライブラリなし） |
+| スタイリング | CSS変数（外部CSSライブラリなし） |
+| デプロイ | Vercel |
