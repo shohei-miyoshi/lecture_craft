@@ -1,18 +1,11 @@
 import { useState, useRef } from "react";
 import Seg from "./Seg.jsx";
 import { DETAIL_LABELS, DIFF_LABELS, DETAIL_VALS, DIFF_VALS, API_URL } from "../utils/constants.js";
-import { toB64, makeDemo, fmt } from "../utils/helpers.js";
+import { toB64, makeDemo } from "../utils/helpers.js";
 
-/**
- * 左パネル
- *
- * 変更点:
- * - appMode は生成後ロック（モード変更には先にリセットが必要）
- * - 書き出しパネルのJSON読み込み（インポート）を追加
- */
 export default function LeftPanel({ state, dispatch, pdfFile, setPdfFile, addToast, requestConfirm }) {
   const [drag, setDrag] = useState(false);
-  const importRef = useRef(null);
+  const fileInputRef = useRef(null); // リセット後のリセット用
 
   const handleFile = (f) => {
     if (!f || f.type !== "application/pdf") return;
@@ -20,7 +13,6 @@ export default function LeftPanel({ state, dispatch, pdfFile, setPdfFile, addToa
     addToast("in", `📑 ${f.name}`);
   };
 
-  // ── 生成 ──
   const startGen = async () => {
     if (!pdfFile) { addToast("er", "PDFをアップロードしてください"); return; }
     dispatch({ type: "SET", k: "status",    v: "proc"           });
@@ -64,26 +56,6 @@ export default function LeftPanel({ state, dispatch, pdfFile, setPdfFile, addToa
     setTimeout(() => dispatch({ type: "SET", k: "showProg", v: false }), 800);
   };
 
-  // ── JSONインポート ──
-  const handleImport = (file) => {
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const data = JSON.parse(e.target.result);
-        // 必須フィールドチェック
-        if (!data.sentences || !data.slides) throw new Error("invalid format");
-        // settings から appMode を復元
-        const mode = data.settings?.mode ?? data.mode ?? "hl";
-        dispatch({ type: "LOAD", d: { ...data, mode } });
-        addToast("ok", `📂 ${file.name} をインポートしました`);
-      } catch {
-        addToast("er", "JSONの形式が正しくありません");
-      }
-    };
-    reader.readAsText(file);
-  };
-
   const statusStyle = {
     idle: { background: "var(--s2)",  color: "var(--tm)" },
     proc: { background: "var(--amd)", border: "1px solid rgba(232,169,75,.28)", color: "var(--am)" },
@@ -91,11 +63,10 @@ export default function LeftPanel({ state, dispatch, pdfFile, setPdfFile, addToa
     err:  { background: "var(--rdd)", border: "1px solid rgba(224,91,91,.28)",   color: "var(--rd)" },
   }[state.status];
 
-  // appMode は生成後ロック
   const modeLocked = state.generated;
 
   return (
-    <aside style={{ width: 250, minWidth: 210, background: "var(--sur)", borderRight: "1px solid var(--bd)", display: "flex", flexDirection: "column", overflow: "hidden", flexShrink: 0 }}>
+    <aside style={{ background: "var(--sur)", borderRight: "1px solid var(--bd)", display: "flex", flexDirection: "column", overflow: "hidden", flexShrink: 0 }}>
       <div style={{ flex: 1, overflowY: "auto", padding: 12 }}>
 
         {/* ─── アップロード ─── */}
@@ -106,7 +77,14 @@ export default function LeftPanel({ state, dispatch, pdfFile, setPdfFile, addToa
           onDrop={(e) => { e.preventDefault(); setDrag(false); handleFile(e.dataTransfer.files[0]); }}
           style={{ border: `2px dashed ${drag ? "var(--ac)" : "var(--bd2)"}`, borderRadius: "var(--rl)", padding: "14px 10px", textAlign: "center", cursor: "pointer", transition: "var(--tr)", position: "relative", marginBottom: 8, background: drag ? "var(--adim)" : "none" }}
         >
-          <input type="file" accept=".pdf" onChange={(e) => handleFile(e.target.files[0])} style={{ position: "absolute", inset: 0, opacity: 0, cursor: "pointer" }} />
+          {/* key={pdfFile} でリセット後に input を再マウント → ファイル選択が再度できるようになる */}
+          <input
+            key={pdfFile ? "has-file" : "no-file"}
+            type="file"
+            accept=".pdf"
+            onChange={(e) => handleFile(e.target.files[0])}
+            style={{ position: "absolute", inset: 0, opacity: 0, cursor: "pointer" }}
+          />
           <div style={{ fontSize: 20, marginBottom: 4 }}>📑</div>
           <p style={{ fontSize: 11, color: "var(--ts)", lineHeight: 1.45 }}>
             <strong style={{ color: "var(--ac)" }}>クリック or ドロップ</strong><br />PDFを選択
@@ -144,11 +122,7 @@ export default function LeftPanel({ state, dispatch, pdfFile, setPdfFile, addToa
                 {fullLabels[state[key]]}
               </span>
             </div>
-            <Seg
-              opts={shortLabels.map((l, i) => ({ v: i, l }))}
-              val={state[key]}
-              onChange={(v) => dispatch({ type: "SET", k: key, v })}
-            />
+            <Seg opts={shortLabels.map((l, i) => ({ v: i, l }))} val={state[key]} onChange={(v) => dispatch({ type: "SET", k: key, v })} />
           </div>
         ))}
 
@@ -161,7 +135,6 @@ export default function LeftPanel({ state, dispatch, pdfFile, setPdfFile, addToa
             </span>
           </div>
           {modeLocked ? (
-            // ロック中は選択不可・現在のモードを表示
             <div style={{ padding: "7px 10px", background: "var(--s2)", border: "1px solid var(--bd)", borderRadius: "var(--r)", fontSize: 11, color: "var(--ts)", display: "flex", alignItems: "center", gap: 6 }}>
               <span>{{ audio: "🔊", video: "📹", hl: "🎬" }[state.appMode]}</span>
               <span>{{ audio: "音声のみ", video: "動画", hl: "HL動画" }[state.appMode]}</span>
@@ -177,23 +150,9 @@ export default function LeftPanel({ state, dispatch, pdfFile, setPdfFile, addToa
         </div>
 
         {/* ─── 生成ボタン ─── */}
-        <button onClick={startGen} style={{ width: "100%", padding: 9, background: "var(--ac)", border: "none", borderRadius: "var(--r)", color: "#fff", fontFamily: "var(--fb)", fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", gap: 5, marginBottom: 6 }}>
+        <button onClick={startGen} style={{ width: "100%", padding: 9, background: "var(--ac)", border: "none", borderRadius: "var(--r)", color: "#fff", fontFamily: "var(--fb)", fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", gap: 5, marginBottom: 10 }}>
           ⚡ 講義メディア生成
         </button>
-
-        {/* ─── JSONインポート ─── */}
-        <div style={{ position: "relative", marginBottom: 10 }}>
-          <input
-            ref={importRef}
-            type="file"
-            accept=".json"
-            onChange={(e) => handleImport(e.target.files[0])}
-            style={{ position: "absolute", inset: 0, opacity: 0, cursor: "pointer" }}
-          />
-          <button style={{ width: "100%", padding: "6px 9px", background: "none", border: "1px solid var(--bd2)", borderRadius: "var(--r)", color: "var(--ts)", fontFamily: "var(--fb)", fontSize: 11, display: "flex", alignItems: "center", justifyContent: "center", gap: 5 }}>
-            📂 保存済みJSONをインポート
-          </button>
-        </div>
 
         {/* ─── ステータス ─── */}
         <div style={{ ...statusStyle, padding: "6px 8px", borderRadius: "var(--r)", fontSize: 10, display: "flex", alignItems: "center", gap: 5, marginBottom: 4 }}>

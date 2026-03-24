@@ -1,54 +1,46 @@
 import { useEffect, useRef } from "react";
 
 /**
- * 再生タイマーフック
- * - playing が true のとき playSpeed に応じた速度で curT を進める
- * - 再生中の文に対応するスライドへ自動スクロール
+ * 再生タイマーフック（rAF + 実時間ベース）
+ *
+ * seekSignal が変化したとき（シーク操作）に
+ * 基準時刻をリセットすることで、再生中シークに対応する。
  */
 export function usePlayback(state, dispatch) {
   const { playing, curT, totDur, playSpeed, sents, curSl } = state;
 
-  const playRef  = useRef(playing);
-  const curTRef  = useRef(curT);
-  const totRef   = useRef(totDur);
-  const speedRef = useRef(playSpeed);
-  const sentsRef = useRef(sents);
-  const curSlRef = useRef(curSl);
-
-  useEffect(() => { playRef.current  = playing;   }, [playing]);
-  useEffect(() => { curTRef.current  = curT;       }, [curT]);
-  useEffect(() => { totRef.current   = totDur;     }, [totDur]);
-  useEffect(() => { speedRef.current = playSpeed;  }, [playSpeed]);
-  useEffect(() => { sentsRef.current = sents;      }, [sents]);
-  useEffect(() => { curSlRef.current = curSl;      }, [curSl]);
+  // Ref経由で最新値を参照（stale closure 回避）
+  const refs = useRef({ playing, curT, totDur, playSpeed, sents, curSl });
+  useEffect(() => {
+    refs.current = { playing, curT, totDur, playSpeed, sents, curSl };
+  });
 
   useEffect(() => {
     if (!playing) return;
 
-    // 実際の経過時間ベースで誤差を累積しないよう Date.now() を使う
+    // 再生開始 or シーク後の基準を記録
     const startWall = Date.now();
-    const startCurT = curTRef.current;
+    const startT    = refs.current.curT;
     let id;
 
     const tick = () => {
-      if (!playRef.current) return;
+      const { playing: p, totDur: td, playSpeed: sp, sents: ss, curSl: cs } = refs.current;
+      if (!p) return;
 
-      const elapsed = (Date.now() - startWall) / 1000; // 秒
-      const next = startCurT + elapsed * speedRef.current;
+      const elapsed = (Date.now() - startWall) / 1000;
+      const next    = startT + elapsed * sp;
 
-      if (next >= totRef.current) {
-        dispatch({ type: "SET", k: "curT",    v: totRef.current });
+      if (next >= td) {
+        dispatch({ type: "SET", k: "curT",    v: td    });
         dispatch({ type: "SET", k: "playing", v: false });
         return;
       }
 
       dispatch({ type: "SET", k: "curT", v: next });
 
-      // 再生中の文に対応するスライドへ自動切替
-      const activeSent = sentsRef.current.find(
-        (s) => s.start_sec <= next && next < s.end_sec
-      );
-      if (activeSent && activeSent.slide_idx !== curSlRef.current) {
+      // 再生位置に対応するスライドへ自動切替
+      const activeSent = ss.find((s) => s.start_sec <= next && next < s.end_sec);
+      if (activeSent && activeSent.slide_idx !== cs) {
         dispatch({ type: "SET_SL", v: activeSent.slide_idx });
       }
 
@@ -57,5 +49,7 @@ export function usePlayback(state, dispatch) {
 
     id = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(id);
-  }, [playing]);
+
+  // playing が変わるたびに再起動（シーク後に playing=true のまま seekSignal 変化させることで再起動）
+  }, [playing, state.seekSignal]);  // seekSignal はシーク時にインクリメントするカウンタ
 }

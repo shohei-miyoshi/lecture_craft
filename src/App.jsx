@@ -4,6 +4,7 @@ import "./index.css";
 import { reducer, INITIAL_STATE } from "./store/reducer.js";
 import { useToast }               from "./hooks/useToast.js";
 import { useConfirm }             from "./hooks/useConfirm.js";
+import { useResizableLayout }     from "./hooks/useResizableLayout.js";
 
 import ConfirmDialog from "./components/ConfirmDialog.jsx";
 import ToastLayer    from "./components/ToastLayer.jsx";
@@ -12,12 +13,34 @@ import CenterPanel   from "./components/CenterPanel.jsx";
 import RightPanel    from "./components/RightPanel.jsx";
 import ExportPanel   from "./components/ExportPanel.jsx";
 
+/** リサイズハンドル（縦線） */
+function ResizeHandle({ onMouseDown, resizing }) {
+  return (
+    <div
+      onMouseDown={onMouseDown}
+      style={{
+        width: 4,
+        flexShrink: 0,
+        cursor: "col-resize",
+        background: resizing ? "var(--ac)" : "transparent",
+        borderLeft: "1px solid var(--bd)",
+        transition: "background .1s",
+        position: "relative",
+        zIndex: 10,
+      }}
+      onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bd2)"; }}
+      onMouseLeave={(e) => { if (!resizing) e.currentTarget.style.background = "transparent"; }}
+    />
+  );
+}
+
 export default function App() {
   const [state, dispatch]         = useReducer(reducer, INITIAL_STATE);
   const [pdfFile, setPdfFile]     = useState(null);
   const [tab, setTab]             = useState("editor");
   const { toasts, addToast }      = useToast();
   const { confirmProps, requestConfirm } = useConfirm();
+  const { layout, startResizeLeft, startResizeRight, resizingLeft, resizingRight, resetLayout } = useResizableLayout();
 
   // ── リセット確認 ──
   const handleReset = () => {
@@ -44,7 +67,6 @@ export default function App() {
   useEffect(() => {
     const handler = (e) => {
       if (["INPUT", "TEXTAREA"].includes(e.target.tagName) || e.target.contentEditable === "true") return;
-      // ConfirmDialog表示中はショートカット無効（Escはダイアログ側で処理）
       if (confirmProps.open) return;
       switch (e.code) {
         case "Space":
@@ -71,17 +93,8 @@ export default function App() {
     return () => window.removeEventListener("keydown", handler);
   }, [state.playing, state.curSl, state.slides.length, state.selHl, confirmProps.open]);
 
-  const tabStyle = (on) => ({
-    padding: "4px 11px", background: "none", fontFamily: "var(--fb)", fontSize: 11,
-    border:     `1px solid ${on ? "rgba(91,141,239,.28)" : "transparent"}`,
-    borderRadius: "var(--r)",
-    color:      on ? "var(--ac)" : "var(--ts)",
-    background: on ? "var(--adim)" : "none",
-    cursor: "pointer",
-  });
-
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden", background: "var(--bg)" }}>
+    <div style={{ display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden", background: "var(--bg)", cursor: resizingLeft || resizingRight ? "col-resize" : "default" }}>
 
       {/* ── ヘッダー ── */}
       <header style={{ height: 46, display: "flex", alignItems: "center", padding: "0 16px", gap: 10, background: "var(--sur)", borderBottom: "1px solid var(--bd)", flexShrink: 0 }}>
@@ -90,30 +103,56 @@ export default function App() {
           Lecture<span style={{ color: "var(--ac)" }}>Craft</span>
         </div>
         <div style={{ width: 1, height: 18, background: "var(--bd)" }} />
-        <div style={{ display: "flex", gap: 2, flex: 1 }}>
-          <button onClick={() => setTab("editor")} style={tabStyle(tab === "editor")}>エディタ</button>
-          <button onClick={() => setTab("export")} style={tabStyle(tab === "export")}>書き出し</button>
-        </div>
+        <div style={{ flex: 1 }} />
+        {/* レイアウトリセット */}
+        <button
+          onClick={resetLayout}
+          title="レイアウトをリセット"
+          style={{ padding: "3px 6px", border: "1px solid var(--bd2)", borderRadius: "var(--r)", background: "none", color: "var(--tm)", fontSize: 10 }}
+        >
+          ⊡
+        </button>
         <button onClick={handleReset} style={{ display: "inline-flex", alignItems: "center", gap: 3, padding: "3px 6px", border: "1px solid var(--bd2)", borderRadius: "var(--r)", background: "var(--s2)", color: "var(--tp)", fontSize: 10 }}>
           ↺ リセット
         </button>
       </header>
 
-      {/* ── メイン3カラム ── */}
+      {/* ── メイン3カラム + リサイズハンドル ── */}
       <div style={{ display: "flex", flex: 1, overflow: "hidden", minHeight: 0 }}>
-        <LeftPanel
-          state={state}
-          dispatch={dispatch}
-          pdfFile={pdfFile}
-          setPdfFile={setPdfFile}
-          addToast={addToast}
-          requestConfirm={requestConfirm}
-        />
+
+        {/* 左パネル（幅可変） */}
+        <div style={{ width: layout.leftWidth, minWidth: layout.leftWidth, maxWidth: layout.leftWidth, overflow: "hidden", flexShrink: 0 }}>
+          <LeftPanel
+            state={state}
+            dispatch={dispatch}
+            pdfFile={pdfFile}
+            setPdfFile={setPdfFile}
+            addToast={addToast}
+            requestConfirm={requestConfirm}
+          />
+        </div>
+
+        {/* 左ハンドル */}
+        <ResizeHandle onMouseDown={startResizeLeft} resizing={resizingLeft} />
+
+        {/* 中央パネル（残り幅を占有） */}
         <CenterPanel state={state} dispatch={dispatch} />
-        {tab === "editor"
-          ? <RightPanel  state={state} dispatch={dispatch} addToast={addToast} requestConfirm={requestConfirm} />
-          : <ExportPanel state={state} addToast={addToast} />
-        }
+
+        {/* 右ハンドル */}
+        <ResizeHandle onMouseDown={startResizeRight} resizing={resizingRight} />
+
+        {/* 右パネル（幅可変） — タブ付き */}
+        <div style={{ width: layout.rightWidth, minWidth: layout.rightWidth, maxWidth: layout.rightWidth, overflow: "hidden", flexShrink: 0 }}>
+          <RightPanel
+            state={state}
+            dispatch={dispatch}
+            addToast={addToast}
+            requestConfirm={requestConfirm}
+            tab={tab}
+            setTab={setTab}
+            rightContent={<ExportPanel state={state} addToast={addToast} />}
+          />
+        </div>
       </div>
 
       {/* ── カスタム確認ダイアログ ── */}

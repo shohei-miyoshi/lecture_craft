@@ -1,19 +1,18 @@
 import SlideCanvas from "./SlideCanvas.jsx";
-import AudioView  from "./AudioView.jsx";
-import Playbar    from "./Playbar.jsx";
+import AudioView   from "./AudioView.jsx";
+import Playbar     from "./Playbar.jsx";
 import { usePlayback } from "../hooks/usePlayback.js";
 
 /**
  * 中央パネル
- * - appMode === "audio" のとき AudioView を表示
- * - それ以外は SlideCanvas を表示
- * - Playbar（シーク・再生速度・スライドナビ）を共通で下部に配置
+ * - HLありモード（appMode==="hl"）のときのみ HL/plain 切替を表示
+ * - タブ（エディタ/書き出し）は右パネル側に移動したため、ここでは持たない
  */
 export default function CenterPanel({ state, dispatch }) {
-  // usePlayback に state 丸ごと渡す（自動スライド切替含む）
   usePlayback(state, dispatch);
 
   const isAudio = state.appMode === "audio";
+  const isHl    = state.appMode === "hl";
 
   return (
     <main style={{ flex: 1, display: "flex", flexDirection: "column", background: "var(--bg)", minWidth: 0, overflow: "hidden" }}>
@@ -22,7 +21,6 @@ export default function CenterPanel({ state, dispatch }) {
       <div style={{ height: 38, display: "flex", alignItems: "center", gap: 6, padding: "0 12px", background: "var(--sur)", borderBottom: "1px solid var(--bd)", flexShrink: 0 }}>
         <span style={{ fontFamily: "var(--ff)", fontSize: 9, fontWeight: 700, letterSpacing: "1.2px", textTransform: "uppercase", color: "var(--tm)" }}>Preview</span>
 
-        {/* 音声モード表示 */}
         {isAudio ? (
           <span style={{ fontSize: 10, color: "var(--am)", background: "var(--amd)", border: "1px solid rgba(232,169,75,.3)", padding: "2px 8px", borderRadius: 20, marginLeft: 4 }}>
             🔊 音声のみ
@@ -33,12 +31,12 @@ export default function CenterPanel({ state, dispatch }) {
           </span>
         )}
 
-        {/* プレビューモード切替（動画モード時のみ） */}
-        {!isAudio && (
+        {/* HL / 動画 切替 — HLありモード(appMode==="hl")のときだけ表示 */}
+        {isHl && (
           <div style={{ marginLeft: "auto", display: "flex", gap: 3 }}>
-            {[["hl", "HL動画"], ["plain", "動画"]].map(([v, l]) => (
+            {[["hl", "🎬 HL表示"], ["plain", "📹 動画"]].map(([v, l]) => (
               <button key={v} onClick={() => dispatch({ type: "SET", k: "prevMode", v })} style={{
-                padding: "3px 8px", border: "1px solid var(--bd2)", borderRadius: 20,
+                padding: "3px 9px", border: "1px solid var(--bd2)", borderRadius: 20,
                 background:  state.prevMode === v ? "var(--adim)" : "none",
                 color:       state.prevMode === v ? "var(--ac)"   : "var(--ts)",
                 borderColor: state.prevMode === v ? "var(--ac)"   : "var(--bd2)",

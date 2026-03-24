@@ -38,6 +38,7 @@ export const INITIAL_STATE = {
   curT:      0,
   playing:   false,
   playSpeed: 1.0,
+  seekSignal: 0,   // シーク操作ごとにインクリメント（usePlaybackの再起動トリガー）
 };
 
 export function reducer(state, action) {
@@ -169,6 +170,21 @@ export function reducer(state, action) {
             : s
         ),
       };
+
+
+    // ── シーク（スライド連動 + 再生中リスタートトリガー）──
+    case "SEEK": {
+      const t = action.v;
+      // 対応するスライドを特定
+      const targetSent = state.sents.find((s) => s.start_sec <= t && t < s.end_sec);
+      const newSl = targetSent ? targetSent.slide_idx : state.curSl;
+      return {
+        ...state,
+        curT:       t,
+        curSl:      newSl,
+        seekSignal: state.seekSignal + 1,
+      };
+    }
 
     // ── 汎用・リセット ──
     case "SET":   return { ...state, [action.k]: action.v };
