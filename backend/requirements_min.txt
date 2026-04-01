@@ -1,0 +1,35 @@
+# ==== コア ====
+numpy==1.26.4
+scipy==1.13.1
+Pillow==11.3.0
+tqdm==4.67.1
+
+# ==== PyTorch 系（動作確認済み組み合わせ）====
+torch==2.1.2
+torchvision==0.16.2
+torchaudio==2.1.2
+
+# ==== Detectron2 + LayoutParser + OpenCV ====
+# detectron2==0.6
+layoutparser==0.3.4
+opencv-python==4.10.0.84
+pycocotools==2.0.10
+
+# ==== PDF 関連（auto_lecture で使う想定）====
+PyMuPDF==1.24.10
+pdf2image==1.17.0
+pdfplumber==0.11.7
+
+# ==== OpenAI API ====
+openai==1.98.0
+tiktoken==0.11.0
+fastapi==0.115.0
+uvicorn==0.30.6
+moviepy==2.2.1
+imageio-ffmpeg==0.6.0
+
+# ==== Jupyter を使うなら（ノート用・任意）====
+ipykernel==6.30.0
+ipython==8.18.1
+jupyter_client==8.6.3
+jupyter_core==5.8.1

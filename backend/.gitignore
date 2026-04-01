@@ -1,0 +1,130 @@
+# backend ignore rules
+# ================================
+# Python
+# ================================
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# 仮想環境（あなたは .venv を使用）
+.venv/
+venv/
+env/
+.venv_*/
+
+# ================================
+# VSCode
+# ================================
+.vscode/
+
+# ================================
+# API Keys / Secrets（絶対 Git に入れない）
+# ================================
+apikey.txt
+*.env
+.env
+*.secret
+secret.txt
+
+# ================================
+# teachingmaterial
+# ================================
+teachingmaterial/img/
+teachingmaterial/pdf/
+outputs/
+
+# =========================
+# AUTO_LECTURE: 実験生成物
+# =========================
+/experiments/runs/**
+
+# runs フォルダ自体は残したい場合（空フォルダ対策）
+!/experiments/runs/.gitkeep
+
+# ================================
+# GPTに渡す用
+# ================================
+collected_source
+
+# ================================
+# AUTO_LECTURE: 各フェーズで生成されるファイル
+# ================================
+
+# LayoutParser 出力
+LP_output/
+
+# ナレーションテキスト（explanations）
+explanations/
+lecture_outputs/lecture_texts/
+lecture_texts/
+lecture_scripts/
+
+# アニメーション割り当て＆中間結果
+region_id_based_outputs*/
+region_id_based_animation_outputs*/
+animation_output/
+animation_outputs/
+add_animation_output/
+add_animation_outputs/
+
+# TTS 出力
+tts/
+tts_output/
+tts_outputs/
+audio/
+
+# ffmpeg 連結後の動画
+lectures/
+slides_output/
+final_lecture/
+lecture_outputs/output_final/
+lecture_outputs/final/
+output_final/
+
+# AUTO_LECTURE 全体の出力ルート
+lecture_outputs/
+
+# ALL_PAGE_SCAN（スキャン画像など）
+lecture_outputs/all_page_scan_outputs/
+all_page_scan_output/
+all_page_scan_outputs/
+
+# ================================
+# Models / Weights（巨大ファイル）
+# ================================
+models/
+weights/
+checkpoints/
+*.pth
+*.bin
+
+# ================================
+# Raw / Large Data
+# ================================
+data/slides/full/
+data/raw/
+data/tmp/
+tmp/
+cache/
+
+# ================================
+# Jupyter
+# ================================
+.ipynb_checkpoints/
+*.ipynb
+
+# ================================
+# Logs / Errors / Debug
+# ================================
+*.log
+logs/
+debug/
+*_ERROR.txt
+*_error.txt
+
+# ================================
+# OS / Editor
+# ================================
+.DS_Store
+Thumbs.db

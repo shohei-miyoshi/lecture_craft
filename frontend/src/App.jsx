@@ -150,7 +150,7 @@ export default function App() {
             requestConfirm={requestConfirm}
             tab={tab}
             setTab={setTab}
-            rightContent={<ExportPanel state={state} addToast={addToast} />}
+            rightContent={<ExportPanel state={state} dispatch={dispatch} addToast={addToast} />}
           />
         </div>
       </div>

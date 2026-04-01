@@ -39,7 +39,31 @@ export const INITIAL_STATE = {
   playing:   false,
   playSpeed: 1.0,
   seekSignal: 0,   // シーク操作ごとにインクリメント（usePlaybackの再起動トリガー）
+
+  // 操作ログ
+  opLogs:    [],
 };
+
+const MAX_OP_LOGS = 300;
+
+function makeLog(message, meta = {}) {
+  return {
+    id: `log_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    at: new Date().toISOString(),
+    message,
+    meta,
+  };
+}
+
+function appendLog(logs, message, meta = {}) {
+  const next = [...(logs ?? []), makeLog(message, meta)];
+  return next.slice(-MAX_OP_LOGS);
+}
+
+function shortText(text, n = 36) {
+  const s = String(text ?? "").replace(/\s+/g, " ").trim();
+  return s.length <= n ? s : `${s.slice(0, n).trimEnd()}…`;
+}
 
 export function reducer(state, action) {
   switch (action.type) {
@@ -67,6 +91,11 @@ export function reducer(state, action) {
         curT:      0,
         playing:   false,
         prevMode,
+        opLogs:    appendLog(
+          state.opLogs,
+          `講義データを読み込みました（slides=${(action.d.slides ?? []).length}, sentences=${sents.length}, mode=${appMode}）`,
+          { type: "load", mode: appMode, slides: (action.d.slides ?? []).length, sentences: sents.length },
+        ),
       };
     }
 
@@ -98,6 +127,11 @@ export function reducer(state, action) {
         hls:     [...state.hls.filter((h) => h.sid !== action.sid), newHl],
         selHl:   newHl.id,
         selSent: action.sid,
+        opLogs:  appendLog(
+          state.opLogs,
+          `ハイライトを設定しました（slide=${sent.slide_idx + 1}, kind=${action.kind}）`,
+          { type: "highlight_add", sid: action.sid, kind: action.kind, slide_idx: sent.slide_idx },
+        ),
       };
     }
 
@@ -107,20 +141,42 @@ export function reducer(state, action) {
         ...state,
         hls:   state.hls.filter((h) => h.sid !== action.v),
         selHl: removed && state.selHl === removed.id ? null : state.selHl,
+        opLogs: removed
+          ? appendLog(
+              state.opLogs,
+              `ハイライトを削除しました（slide=${removed.slide_idx + 1}）`,
+              { type: "highlight_remove", sid: action.v, slide_idx: removed.slide_idx },
+            )
+          : state.opLogs,
       };
     }
 
     case "RM_HL_ID":
+      {
+        const removed = state.hls.find((h) => h.id === action.v);
       return {
         ...state,
         hls:   state.hls.filter((h) => h.id !== action.v),
         selHl: state.selHl === action.v ? null : state.selHl,
+        opLogs: removed
+          ? appendLog(
+              state.opLogs,
+              `ハイライトを削除しました（slide=${removed.slide_idx + 1}）`,
+              { type: "highlight_remove", id: action.v, slide_idx: removed.slide_idx },
+            )
+          : state.opLogs,
       };
+      }
 
     case "SET_HL_KIND":
       return {
         ...state,
         hls: state.hls.map((h) => (h.id === action.id ? { ...h, kind: action.kind } : h)),
+        opLogs: appendLog(
+          state.opLogs,
+          `ハイライト種別を変更しました（kind=${action.kind}）`,
+          { type: "highlight_kind", id: action.id, kind: action.kind },
+        ),
       };
 
     case "UPD_HL": {
@@ -128,6 +184,11 @@ export function reducer(state, action) {
       return {
         ...state,
         hls: state.hls.map((h) => (h.id === id ? { ...h, x, y, w, h: hv } : h)),
+        opLogs: appendLog(
+          state.opLogs,
+          "ハイライト位置を更新しました",
+          { type: "highlight_update", id, x, y, w, h: hv },
+        ),
       };
     }
 
@@ -144,24 +205,48 @@ export function reducer(state, action) {
           end_sec:   state.totDur + 3,
         }],
         totDur: state.totDur + 3,
+        opLogs: appendLog(
+          state.opLogs,
+          `文を追加しました（slide=${(state.appMode === "audio" ? 1 : state.curSl + 1)}）`,
+          { type: "sentence_add", slide_idx: state.appMode === "audio" ? 0 : state.curSl },
+        ),
       };
     }
 
-    case "DEL_SENT":
+    case "DEL_SENT": {
+      const removed = state.sents.find((s) => s.id === action.v);
       return {
         ...state,
         sents:   state.sents.filter((s) => s.id !== action.v),
         hls:     state.hls.filter((h) => h.sid !== action.v),
         selSent: state.selSent === action.v ? null : state.selSent,
+        opLogs: removed
+          ? appendLog(
+              state.opLogs,
+              `文を削除しました（slide=${removed.slide_idx + 1}, text=${shortText(removed.text)})`,
+              { type: "sentence_delete", id: action.v, slide_idx: removed.slide_idx },
+            )
+          : state.opLogs,
       };
+    }
 
-    case "UPD_TXT":
+    case "UPD_TXT": {
+      const prev = state.sents.find((s) => s.id === action.id);
       return {
         ...state,
         sents: state.sents.map((s) => (s.id === action.id ? { ...s, text: action.text } : s)),
+        opLogs: prev && prev.text !== action.text
+          ? appendLog(
+              state.opLogs,
+              `文を編集しました（text=${shortText(action.text)})`,
+              { type: "sentence_text", id: action.id, slide_idx: prev.slide_idx },
+            )
+          : state.opLogs,
       };
+    }
 
-    case "UPD_SENT_TIME":
+    case "UPD_SENT_TIME": {
+      const prev = state.sents.find((s) => s.id === action.id);
       return {
         ...state,
         sents: state.sents.map((s) =>
@@ -169,7 +254,15 @@ export function reducer(state, action) {
             ? { ...s, start_sec: action.start_sec, end_sec: action.end_sec }
             : s
         ),
+        opLogs: prev
+          ? appendLog(
+              state.opLogs,
+              `文のタイミングを更新しました（${action.start_sec}s-${action.end_sec}s）`,
+              { type: "sentence_time", id: action.id, slide_idx: prev.slide_idx, start_sec: action.start_sec, end_sec: action.end_sec },
+            )
+          : state.opLogs,
       };
+    }
 
 
     // ── シーク（スライド連動 + 再生中リスタートトリガー）──
@@ -187,8 +280,31 @@ export function reducer(state, action) {
     }
 
     // ── 汎用・リセット ──
-    case "SET":   return { ...state, [action.k]: action.v };
-    case "RESET": return { ...INITIAL_STATE };
+    case "SET": {
+      const next = { ...state, [action.k]: action.v };
+      if (action.k === "detail") {
+        next.opLogs = appendLog(state.opLogs, `詳細度を変更しました（value=${action.v}）`, { type: "setting_detail", value: action.v });
+      } else if (action.k === "level") {
+        next.opLogs = appendLog(state.opLogs, `難易度を変更しました（value=${action.v}）`, { type: "setting_level", value: action.v });
+      } else if (action.k === "appMode") {
+        next.opLogs = appendLog(state.opLogs, `提示形態を変更しました（mode=${action.v}）`, { type: "setting_mode", value: action.v });
+      } else if (action.k === "prevMode") {
+        next.opLogs = appendLog(state.opLogs, `プレビュー表示を切り替えました（mode=${action.v}）`, { type: "preview_mode", value: action.v });
+      } else if (action.k === "playSpeed") {
+        next.opLogs = appendLog(state.opLogs, `再生速度を変更しました（speed=${action.v}）`, { type: "play_speed", value: action.v });
+      }
+      return next;
+    }
+    case "APP_LOG":
+      return {
+        ...state,
+        opLogs: appendLog(state.opLogs, action.message, action.meta),
+      };
+    case "RESET":
+      return {
+        ...INITIAL_STATE,
+        opLogs: appendLog(state.opLogs, "講義データをリセットしました", { type: "reset" }),
+      };
     default:      return state;
   }
 }

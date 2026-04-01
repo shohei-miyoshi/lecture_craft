@@ -1,0 +1,64 @@
+{
+  "experiment_id": "exp_10slides_10conds",
+
+  "pdf_scan": {
+    "material_root": "teachingmaterial",
+    "pdf_dir": "pdf",
+    "include_glob": ["*.pdf"],
+    "exclude_glob": [],
+    "sort": "name_asc"
+  },
+
+  "conditions": [
+    "baseline_anim",
+    "summary_only_anim",
+    "detail_only_anim",
+    "intro_only_anim",
+    "advanced_only_anim",
+    "baseline_audio",
+    "intro_only_audio",
+    "summary_only_audio",
+    "combo_adv_detail_anim",
+    "combo_intro_summary_audio"
+  ],
+
+  "condition_specs": {
+    "baseline_anim": { "type": "animation", "level": "baseline", "detail": "baseline" },
+    "summary_only_anim": { "type": "animation", "level": "baseline", "detail": "summary" },
+    "detail_only_anim": { "type": "animation", "level": "baseline", "detail": "detail" },
+    "intro_only_anim": { "type": "animation", "level": "intro", "detail": "baseline" },
+    "advanced_only_anim": { "type": "animation", "level": "advanced", "detail": "baseline" },
+
+    "baseline_audio": { "type": "audio", "level": "baseline", "detail": "baseline" },
+    "intro_only_audio": { "type": "audio", "level": "intro", "detail": "baseline" },
+    "summary_only_audio": { "type": "audio", "level": "baseline", "detail": "summary" },
+
+    "combo_adv_detail_anim": { "type": "animation", "level": "advanced", "detail": "detail" },
+    "combo_intro_summary_audio": { "type": "audio", "level": "intro", "detail": "summary" }
+  },
+
+  "judge_models": ["gpt-5", "gpt-4o"],
+
+  "pairs": [
+    { "pair_id": "p11", "A": "baseline_anim", "B": "summary_only_anim" },
+    { "pair_id": "p12", "A": "baseline_anim", "B": "detail_only_anim" },
+    { "pair_id": "p21", "A": "baseline_anim", "B": "intro_only_anim" },
+    { "pair_id": "p22", "A": "baseline_anim", "B": "advanced_only_anim" },
+
+    { "pair_id": "p32", "A": "baseline_anim", "B": "baseline_audio" },
+
+    { "pair_id": "p33", "A": "baseline_audio", "B": "intro_only_audio" },
+    { "pair_id": "p34", "A": "baseline_audio", "B": "summary_only_audio" },
+
+    { "pair_id": "p41", "A": "detail_only_anim", "B": "combo_adv_detail_anim" },
+    { "pair_id": "p42", "A": "advanced_only_anim", "B": "combo_adv_detail_anim" },
+
+    { "pair_id": "p43", "A": "intro_only_audio", "B": "combo_intro_summary_audio" },
+    { "pair_id": "p44", "A": "summary_only_audio", "B": "combo_intro_summary_audio" },
+
+    { "pair_id": "p51", "A": "baseline_anim", "B": "combo_adv_detail_anim" },
+    { "pair_id": "p52", "A": "baseline_audio", "B": "combo_intro_summary_audio" },
+    { "pair_id": "p53", "A": "baseline_anim", "B": "combo_intro_summary_audio" }
+  ]
+}
+

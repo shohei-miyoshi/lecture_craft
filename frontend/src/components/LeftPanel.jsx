@@ -10,11 +10,17 @@ export default function LeftPanel({ state, dispatch, pdfFile, setPdfFile, addToa
   const handleFile = (f) => {
     if (!f || f.type !== "application/pdf") return;
     setPdfFile(f);
+    dispatch({ type: "APP_LOG", message: `PDFを選択しました（file=${f.name}, size=${f.size}bytes）`, meta: { type: "pdf_select", filename: f.name, size: f.size } });
     addToast("in", `📑 ${f.name}`);
   };
 
   const startGen = async () => {
     if (!pdfFile) { addToast("er", "PDFをアップロードしてください"); return; }
+    dispatch({
+      type: "APP_LOG",
+      message: `生成を開始しました（file=${pdfFile.name}, detail=${DETAIL_VALS[state.detail]}, difficulty=${DIFF_VALS[state.level]}, mode=${state.appMode}）`,
+      meta: { type: "generate_start", filename: pdfFile.name, detail: DETAIL_VALS[state.detail], difficulty: DIFF_VALS[state.level], mode: state.appMode },
+    });
     dispatch({ type: "SET", k: "status",    v: "proc"           });
     dispatch({ type: "SET", k: "statusMsg", v: "スライドを解析中..." });
     dispatch({ type: "SET", k: "showProg",  v: true             });
@@ -41,6 +47,11 @@ export default function LeftPanel({ state, dispatch, pdfFile, setPdfFile, addToa
       dispatch({ type: "SET",  k: "progress",  v: 100   });
       dispatch({ type: "SET",  k: "status",    v: "done" });
       dispatch({ type: "SET",  k: "statusMsg", v: "生成完了" });
+      dispatch({
+        type: "APP_LOG",
+        message: `生成が完了しました（backend, mode=${state.appMode}）`,
+        meta: { type: "generate_success", source: "backend", mode: state.appMode },
+      });
       addToast("ok", "✅ 講義メディアを生成しました");
     } catch (err) {
       console.warn("Backend unavailable:", err.message);
@@ -51,6 +62,11 @@ export default function LeftPanel({ state, dispatch, pdfFile, setPdfFile, addToa
       dispatch({ type: "SET", k: "progress",  v: 100              });
       dispatch({ type: "SET", k: "status",    v: "done"            });
       dispatch({ type: "SET", k: "statusMsg", v: "生成完了（デモ）" });
+      dispatch({
+        type: "APP_LOG",
+        message: `バックエンド接続に失敗したためデモデータを読み込みました（reason=${err.message}）`,
+        meta: { type: "generate_fallback_demo", reason: err.message, mode: state.appMode },
+      });
       addToast("in", "🔧 バックエンド未接続 — デモデータで表示");
     }
     setTimeout(() => dispatch({ type: "SET", k: "showProg", v: false }), 800);

@@ -1,0 +1,59 @@
+{
+  "aspects": [
+    {
+      "name": "technical_term_count",
+      "type": "count",
+      "definition": "専門用語（学術・技術的な用語）として数えられる語の個数を数える"
+    },
+    {
+      "name": "example_count",
+      "type": "count",
+      "definition": "例示の明示（例えば／例として／〜の例 など）の回数を数える"
+    },
+    {
+      "name": "paraphrase_count",
+      "type": "count",
+      "definition": "言い換え・要約の明示（つまり／言い換えると／要するに など）の回数を数える"
+    },
+    {
+      "name": "attention_count",
+      "type": "count",
+      "definition": "注意喚起の明示（注意／重要／ここで重要 など）の回数を数える"
+    },
+    {
+      "name": "definition_count",
+      "type": "count",
+      "definition": "定義の明示（〜とは／〜を…という など）の回数を数える"
+    },
+    {
+      "name": "assumption_count",
+      "type": "count",
+      "definition": "前提・仮定の明示（ここでは〜とする／前提として／仮に など）の回数を数える"
+    },
+    {
+      "name": "causal_count",
+      "type": "count",
+      "definition": "因果・理由づけの明示（なぜなら／そのため／したがって など）の回数を数える"
+    },
+    {
+      "name": "procedure_count",
+      "type": "count",
+      "definition": "手順・順序の明示（まず／次に／最後に／手順 など）の回数を数える"
+    },
+    {
+      "name": "vague_count",
+      "type": "count",
+      "definition": "曖昧表現（だいたい／〜のような／場合によって／いくつか など）の回数を数える"
+    },
+    {
+      "name": "deictic_count",
+      "type": "count",
+      "definition": "指示語（これ／それ／この／その／あれ など）の回数を数える"
+    },
+    {
+      "name": "visual_reference_count",
+      "type": "count",
+      "definition": "視覚参照（図／表／グラフ／スライド／ここを見て など）の回数を数える"
+    }
+  ]
+}
