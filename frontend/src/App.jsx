@@ -12,6 +12,7 @@ import LeftPanel     from "./components/LeftPanel.jsx";
 import CenterPanel   from "./components/CenterPanel.jsx";
 import RightPanel    from "./components/RightPanel.jsx";
 import ExportPanel   from "./components/ExportPanel.jsx";
+import AdminDashboard from "./components/AdminDashboard.jsx";
 
 /** リサイズハンドル（縦線） */
 function ResizeHandle({ onMouseDown, resizing }) {
@@ -38,6 +39,7 @@ export default function App() {
   const [state, dispatch]         = useReducer(reducer, INITIAL_STATE);
   const [pdfFile, setPdfFile]     = useState(null);
   const [tab, setTab]             = useState("editor");
+  const [view, setView]           = useState(() => (window.location.hash === "#admin" ? "admin" : "studio"));
   const { toasts, addToast }      = useToast();
   const { confirmProps, requestConfirm } = useConfirm();
   const { layout, startResizeLeft, startResizeRight, resizingLeft, resizingRight, resetLayout } = useResizableLayout();
@@ -65,7 +67,14 @@ export default function App() {
 
   // ── キーボードショートカット ──
   useEffect(() => {
+    const onHashChange = () => setView(window.location.hash === "#admin" ? "admin" : "studio");
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, []);
+
+  useEffect(() => {
     const handler = (e) => {
+      if (view === "admin") return;
       if (["INPUT", "TEXTAREA"].includes(e.target.tagName) || e.target.contentEditable === "true") return;
       if (confirmProps.open) return;
       switch (e.code) {
@@ -91,7 +100,12 @@ export default function App() {
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [state.playing, state.curSl, state.slides.length, state.selHl, confirmProps.open]);
+  }, [state.playing, state.curSl, state.slides.length, state.selHl, confirmProps.open, view]);
+
+  const switchView = (nextView) => {
+    setView(nextView);
+    window.location.hash = nextView === "admin" ? "admin" : "";
+  };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden", background: "var(--bg)", cursor: resizingLeft || resizingRight ? "col-resize" : "default" }}>
@@ -103,6 +117,28 @@ export default function App() {
           Lecture<span style={{ color: "var(--ac)" }}>Craft</span>
         </div>
         <div style={{ width: 1, height: 18, background: "var(--bd)" }} />
+        <div style={{ display: "inline-flex", padding: 3, borderRadius: 999, background: "var(--s2)", border: "1px solid var(--bd)" }}>
+          {[
+            ["studio", "Studio"],
+            ["admin", "Admin"],
+          ].map(([key, label]) => (
+            <button
+              key={key}
+              onClick={() => switchView(key)}
+              style={{
+                padding: "4px 10px",
+                border: "none",
+                borderRadius: 999,
+                background: view === key ? "var(--ac)" : "transparent",
+                color: view === key ? "#fff" : "var(--ts)",
+                fontSize: 10,
+                fontWeight: 600,
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
         <div style={{ flex: 1 }} />
         {/* レイアウトリセット */}
         <button
@@ -118,6 +154,11 @@ export default function App() {
       </header>
 
       {/* ── メイン3カラム + リサイズハンドル ── */}
+      {view === "admin" ? (
+        <div style={{ flex: 1, minHeight: 0 }}>
+          <AdminDashboard addToast={addToast} />
+        </div>
+      ) : (
       <div style={{ display: "flex", flex: 1, overflow: "hidden", minHeight: 0 }}>
 
         {/* 左パネル（幅可変） */}
@@ -154,6 +195,7 @@ export default function App() {
           />
         </div>
       </div>
+      )}
 
       {/* ── カスタム確認ダイアログ ── */}
       <ConfirmDialog {...confirmProps} />

@@ -16,6 +16,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 OUTPUT_ROOT = PROJECT_ROOT / "outputs"
 API_CACHE_ROOT = OUTPUT_ROOT / "api_cache"
 API_JOB_ROOT = OUTPUT_ROOT / "api_jobs"
+API_EVENT_ROOT = OUTPUT_ROOT / "api_events"
 AUDIO_SHARED_CACHE_ROOT = OUTPUT_ROOT / "shared_audio"
 PIPELINE_VERSION = "20260401_async_jobs_v1"
 
@@ -97,6 +98,12 @@ def job_snapshot_path(job_id: str) -> Path:
     return API_JOB_ROOT / f"{job_id}.json"
 
 
+def event_snapshot_path(prefix: str) -> Path:
+    API_EVENT_ROOT.mkdir(parents=True, exist_ok=True)
+    safe_prefix = _safe_stem(prefix)
+    return API_EVENT_ROOT / f"{safe_prefix}_{datetime_slug()}.json"
+
+
 def get_named_lock(name: str) -> threading.Lock:
     with _LOCKS_GUARD:
         lock = _NAMED_LOCKS.get(name)
@@ -108,3 +115,9 @@ def get_named_lock(name: str) -> threading.Lock:
 
 def _safe_stem(text: str) -> str:
     return re.sub(r"[^0-9A-Za-z._ぁ-んァ-ヶ一-龠-]+", "_", text).strip("_") or "lecture"
+
+
+def datetime_slug() -> str:
+    from datetime import datetime
+
+    return datetime.now().strftime("%Y%m%d_%H%M%S_%f")

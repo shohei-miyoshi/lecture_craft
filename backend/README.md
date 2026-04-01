@@ -143,6 +143,9 @@ curl http://127.0.0.1:8000/api/health
 生成APIは非同期で、`POST /api/generate` は即時に `job_id` を返します。
 実際の生成はバックグラウンド worker が処理し、進捗は `GET /api/jobs/{job_id}` で確認します。
 
+管理ダッシュボード用に `GET /api/admin/overview` も追加しています。
+ここでは generate / export の利用状況と `experiments/runs/` の概要を返します。
+
 補足:
 - `backend/.venv` は `Python 3.10` または `3.11` で作ってください
 - `Python 3.14` だと `scipy` がビルド失敗しやすいです

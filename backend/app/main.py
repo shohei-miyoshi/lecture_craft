@@ -8,6 +8,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from .admin import build_admin_overview
 from .jobs import get_job_manager
 from .models import ExportRequest, GenerateRequest
 from .service import ApiError, export_media
@@ -77,6 +78,11 @@ def generate_endpoint(req: GenerateRequest):
 @app.get("/api/jobs/{job_id}")
 def job_status_endpoint(job_id: str):
     return get_job_manager().get_job(job_id)
+
+
+@app.get("/api/admin/overview")
+def admin_overview_endpoint(limit: int = 12):
+    return build_admin_overview(limit=max(1, min(limit, 50)))
 
 
 @app.post("/api/export")

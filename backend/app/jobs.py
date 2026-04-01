@@ -90,6 +90,12 @@ class JobManager:
                 request_key=plan.request_key,
                 result_path=str(plan.response_cache_path),
                 cache_hit=True,
+                payload={
+                    "mode": req.mode,
+                    "detail": req.detail,
+                    "difficulty": req.difficulty,
+                    "filename": req.filename,
+                },
             )
             return self._public_job_payload(record.job_id)
 
@@ -110,6 +116,7 @@ class JobManager:
                         "updated_at": existing.updated_at,
                         "cache_hit": existing.cache_hit,
                         "deduplicated": existing.deduplicated,
+                        "payload": existing.payload,
                     }
                     return payload
 
@@ -123,6 +130,12 @@ class JobManager:
                 created_at=now,
                 updated_at=now,
                 request_key=plan.request_key,
+                payload={
+                    "mode": req.mode,
+                    "detail": req.detail,
+                    "difficulty": req.difficulty,
+                    "filename": req.filename,
+                },
             )
             self.jobs[record.job_id] = record
             self._active_generate_jobs[plan.request_key] = record.job_id
@@ -137,6 +150,7 @@ class JobManager:
                 "updated_at": record.updated_at,
                 "cache_hit": record.cache_hit,
                 "deduplicated": record.deduplicated,
+                "payload": record.payload,
             }
         self._queue.put((record.job_id, req.model_dump()))
         return payload
@@ -220,6 +234,7 @@ class JobManager:
         result_path: Optional[str] = None,
         error: Optional[Dict[str, str]] = None,
         cache_hit: bool = False,
+        payload: Optional[Dict[str, Any]] = None,
     ) -> JobRecord:
         now = _now_iso()
         record = JobRecord(
@@ -234,6 +249,7 @@ class JobManager:
             result_path=result_path,
             error=error,
             cache_hit=cache_hit,
+            payload=dict(payload or {}),
         )
         with self._jobs_lock:
             self.jobs[record.job_id] = record
@@ -284,6 +300,7 @@ class JobManager:
                 "updated_at": record.updated_at,
                 "cache_hit": record.cache_hit,
                 "deduplicated": record.deduplicated,
+                "payload": record.payload,
             }
             result_path = record.result_path
             error = record.error
@@ -321,6 +338,7 @@ class JobManager:
                     "error": record.error,
                     "cache_hit": record.cache_hit,
                     "deduplicated": record.deduplicated,
+                    "payload": record.payload,
                 },
                 ensure_ascii=False,
                 indent=2,

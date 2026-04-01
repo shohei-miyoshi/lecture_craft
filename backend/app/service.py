@@ -25,6 +25,7 @@ if str(SRC_ROOT) not in sys.path:
 
 from .cache import (
     GenerateCachePlan,
+    event_snapshot_path,
     build_generate_cache_plan,
     decode_pdf_base64,
     get_named_lock,
@@ -165,12 +166,18 @@ def generate_media(
 
 def export_media(req: ExportRequest) -> FileResponse:
     export_type = req.type
-    if export_type == "audio":
-        out_path = export_audio(req)
-        return FileResponse(out_path, media_type="audio/mpeg", filename="lecture.mp3")
+    try:
+        if export_type == "audio":
+            out_path = export_audio(req)
+            log_export_event(req, status="completed", output_path=out_path)
+            return FileResponse(out_path, media_type="audio/mpeg", filename="lecture.mp3")
 
-    out_path = export_video(req, include_highlights=(export_type == "video_highlight"))
-    return FileResponse(out_path, media_type="video/mp4", filename="lecture.mp4")
+        out_path = export_video(req, include_highlights=(export_type == "video_highlight"))
+        log_export_event(req, status="completed", output_path=out_path)
+        return FileResponse(out_path, media_type="video/mp4", filename="lecture.mp4")
+    except Exception as exc:
+        log_export_event(req, status="failed", error_message=str(exc))
+        raise
 
 
 def export_audio(req: ExportRequest) -> Path:
@@ -787,3 +794,31 @@ def write_api_meta(
     }
     meta_path = Path(paths.output_dir) / "api_meta.json"
     meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def log_export_event(
+    req: ExportRequest,
+    *,
+    status: str,
+    output_path: Optional[Path] = None,
+    error_message: Optional[str] = None,
+) -> None:
+    payload = {
+        "created_at": datetime.now().isoformat(timespec="seconds"),
+        "status": status,
+        "export_type": req.type,
+        "mode": req.mode,
+        "source_cache_key": req.source_cache_key,
+        "source_material_name": req.source_material_name,
+        "source_output_root_name": req.source_output_root_name,
+        "slide_count": len(req.slides),
+        "sentence_count": len(req.sentences),
+        "highlight_count": len(req.highlights),
+        "output_path": str(output_path) if output_path else None,
+        "error_message": error_message,
+    }
+    try:
+        path = event_snapshot_path("export")
+        path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception:
+        pass
