@@ -12,6 +12,7 @@ export const INITIAL_STATE = {
   hls:       [],
   totDur:    0,
   generated: false,
+  genRef:    null,
 
   // ナビゲーション
   curSl:    0,
@@ -83,6 +84,7 @@ export function reducer(state, action) {
         sents,
         hls:       action.d.highlights ?? [],
         totDur,
+        genRef:    action.d.generation_ref ?? null,
         appMode,
         curSl:     0,
         generated: true,

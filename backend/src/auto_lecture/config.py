@@ -1,4 +1,5 @@
 # src/auto_lecture/config.py
+import os
 from pathlib import Path
 from dataclasses import dataclass
 
@@ -7,12 +8,30 @@ from dataclasses import dataclass
 # ============================================================
 
 # --- GPT モデル ---
+def _env_str(name: str, default: str) -> str:
+    return os.getenv(name, default).strip() or default
+
+
+def _env_int(name: str, default: int) -> int:
+    try:
+        return int(os.getenv(name, str(default)))
+    except Exception:
+        return default
+
+
 # ナレーション生成
-API_MODEL_EXPLANATION = "gpt-5"
+API_MODEL_EXPLANATION = _env_str("KENKYU_MODEL_EXPLANATION", "gpt-5")
 API_MODEL_EXPLANATION_TEMPERATURE = 1.0
 
+# 各ステップごとの上書き設定
+API_MODEL_DECK_SCAN = _env_str("KENKYU_MODEL_DECK_SCAN", API_MODEL_EXPLANATION)
+API_MODEL_AUDIO_MATERIAL = _env_str("KENKYU_MODEL_AUDIO_MATERIAL", API_MODEL_EXPLANATION)
+API_MODEL_AUDIO_OUTLINE = _env_str("KENKYU_MODEL_AUDIO_OUTLINE", API_MODEL_EXPLANATION)
+API_MODEL_AUDIO_NARRATION = _env_str("KENKYU_MODEL_AUDIO_NARRATION", API_MODEL_EXPLANATION)
+API_MODEL_AUDIO_STITCH = _env_str("KENKYU_MODEL_AUDIO_STITCH", API_MODEL_EXPLANATION)
+
 # アニメーション割り当て
-API_MODEL_ANIMATION = "gpt-5"
+API_MODEL_ANIMATION = _env_str("KENKYU_MODEL_ANIMATION", "gpt-5")
 API_MODEL_ANIMATION_TEMPERATURE = 1.0
 
 # --- TTS ---
@@ -65,6 +84,12 @@ TTS_OUTPUT_DIR_NAME = "tts_outputs"
 ANIMATION_OUTPUT_DIR_NAME = "region_id_based_animation_outputs"
 ADD_ANIMATION_OUTPUT_DIR_NAME = "add_animation_outputs"
 LECTURE_OUTPUTS_FINAL_DIR_NAME = "output_final"
+
+# ============================================================
+#  実行制御
+# ============================================================
+
+AUDIO_MATERIAL_MAX_WORKERS = max(1, _env_int("KENKYU_AUDIO_MATERIAL_MAX_WORKERS", 3))
 
 # ============================================================
 #  データクラス

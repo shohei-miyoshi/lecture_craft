@@ -10,6 +10,7 @@ from openai import OpenAI
 from .paths import ProjectPaths
 from .gpt_utils import ask_gpt, create_user_message
 from .style_axes import resolve_level_detail
+from . import config
 
 
 def collect_slide_images(img_root: Path) -> List[str]:
@@ -130,6 +131,7 @@ def run_deck_scan(
     scan_response = ask_gpt(
         client,
         scan_messages,
+        modelname=config.API_MODEL_DECK_SCAN,
         max_tokens=6000,
     )
 

@@ -3,6 +3,8 @@ import Seg from "./Seg.jsx";
 import { DETAIL_LABELS, DIFF_LABELS, DETAIL_VALS, DIFF_VALS, API_URL } from "../utils/constants.js";
 import { toB64, makeDemo } from "../utils/helpers.js";
 
+const JOB_POLL_MS = 2000;
+
 export default function LeftPanel({ state, dispatch, pdfFile, setPdfFile, addToast, requestConfirm }) {
   const [drag, setDrag] = useState(false);
   const fileInputRef = useRef(null); // リセット後のリセット用
@@ -27,8 +29,8 @@ export default function LeftPanel({ state, dispatch, pdfFile, setPdfFile, addToa
     dispatch({ type: "SET", k: "progress",  v: 10               });
     try {
       const b64 = await toB64(pdfFile);
-      dispatch({ type: "SET", k: "progress",  v: 30        });
-      dispatch({ type: "SET", k: "statusMsg", v: "台本を生成中..." });
+      dispatch({ type: "SET", k: "progress",  v: 20        });
+      dispatch({ type: "SET", k: "statusMsg", v: "生成ジョブを登録中..." });
       const res = await fetch(`${API_URL}/api/generate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -41,33 +43,65 @@ export default function LeftPanel({ state, dispatch, pdfFile, setPdfFile, addToa
         }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      dispatch({ type: "SET",  k: "progress",  v: 85             });
+      let job = await res.json();
+      dispatch({
+        type: "APP_LOG",
+        message: `生成ジョブを受け付けました（job_id=${job.job_id}, status=${job.status}）`,
+        meta: { type: "generate_job_accepted", job_id: job.job_id, status: job.status },
+      });
+
+      while (job.status === "queued" || job.status === "running") {
+        dispatch({ type: "SET", k: "progress", v: Math.max(20, Number(job.progress ?? 20)) });
+        dispatch({ type: "SET", k: "statusMsg", v: job.message || "バックエンドで生成中..." });
+        await new Promise((resolve) => setTimeout(resolve, JOB_POLL_MS));
+        const pollRes = await fetch(`${API_URL}/api/jobs/${job.job_id}`);
+        if (!pollRes.ok) throw new Error(`HTTP ${pollRes.status}`);
+        job = await pollRes.json();
+      }
+
+      if (job.status !== "completed" || !job.result) {
+        throw new Error(job.error?.message || "生成ジョブが失敗しました");
+      }
+
+      dispatch({ type: "SET",  k: "progress",  v: 92             });
       dispatch({ type: "SET",  k: "statusMsg", v: "データを読み込み中..." });
-      dispatch({ type: "LOAD", d: await res.json() });
+      dispatch({ type: "LOAD", d: job.result });
       dispatch({ type: "SET",  k: "progress",  v: 100   });
       dispatch({ type: "SET",  k: "status",    v: "done" });
       dispatch({ type: "SET",  k: "statusMsg", v: "生成完了" });
       dispatch({
         type: "APP_LOG",
-        message: `生成が完了しました（backend, mode=${state.appMode}）`,
-        meta: { type: "generate_success", source: "backend", mode: state.appMode },
+        message: `生成が完了しました（backend, mode=${state.appMode}, job_id=${job.job_id}, cache_hit=${job.cache_hit}）`,
+        meta: { type: "generate_success", source: "backend", mode: state.appMode, job_id: job.job_id, cache_hit: job.cache_hit },
       });
       addToast("ok", "✅ 講義メディアを生成しました");
     } catch (err) {
-      console.warn("Backend unavailable:", err.message);
-      dispatch({ type: "SET", k: "progress",  v: 60            });
-      dispatch({ type: "SET", k: "statusMsg", v: "デモデータを準備中..." });
-      await new Promise((r) => setTimeout(r, 300));
-      dispatch({ type: "LOAD", d: { ...makeDemo(), mode: state.appMode } });
-      dispatch({ type: "SET", k: "progress",  v: 100              });
-      dispatch({ type: "SET", k: "status",    v: "done"            });
-      dispatch({ type: "SET", k: "statusMsg", v: "生成完了（デモ）" });
-      dispatch({
-        type: "APP_LOG",
-        message: `バックエンド接続に失敗したためデモデータを読み込みました（reason=${err.message}）`,
-        meta: { type: "generate_fallback_demo", reason: err.message, mode: state.appMode },
-      });
-      addToast("in", "🔧 バックエンド未接続 — デモデータで表示");
+      console.warn("Backend generate failed:", err.message);
+      const backendUnavailable = /Failed to fetch|HTTP 404|HTTP 500|HTTP 502|HTTP 503/.test(String(err.message));
+      if (backendUnavailable) {
+        dispatch({ type: "SET", k: "progress",  v: 60            });
+        dispatch({ type: "SET", k: "statusMsg", v: "デモデータを準備中..." });
+        await new Promise((r) => setTimeout(r, 300));
+        dispatch({ type: "LOAD", d: { ...makeDemo(), mode: state.appMode } });
+        dispatch({ type: "SET", k: "progress",  v: 100              });
+        dispatch({ type: "SET", k: "status",    v: "done"            });
+        dispatch({ type: "SET", k: "statusMsg", v: "生成完了（デモ）" });
+        dispatch({
+          type: "APP_LOG",
+          message: `バックエンド接続に失敗したためデモデータを読み込みました（reason=${err.message}）`,
+          meta: { type: "generate_fallback_demo", reason: err.message, mode: state.appMode },
+        });
+        addToast("in", "🔧 バックエンド未接続 — デモデータで表示");
+      } else {
+        dispatch({ type: "SET", k: "status", v: "err" });
+        dispatch({ type: "SET", k: "statusMsg", v: err.message || "生成に失敗しました" });
+        dispatch({
+          type: "APP_LOG",
+          message: `生成に失敗しました（reason=${err.message ?? "unknown"}）`,
+          meta: { type: "generate_error", reason: err.message ?? "unknown", mode: state.appMode },
+        });
+        addToast("er", err.message || "生成に失敗しました");
+      }
     }
     setTimeout(() => dispatch({ type: "SET", k: "showProg", v: false }), 800);
   };

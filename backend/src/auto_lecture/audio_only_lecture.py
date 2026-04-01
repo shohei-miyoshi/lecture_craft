@@ -28,19 +28,21 @@ OpenAI クライアントは gpt_client.py 経由で取得する。
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 import base64
 import json
 import re
+import shutil
 
 from openai import OpenAI
 
 from .paths import ProjectPaths
 from .gpt_utils import ask_gpt  # 他モジュール用に残す（ここでは使わない）
 from .deck_scan import collect_slide_images
-from .config import API_MODEL_EXPLANATION
+from . import config
 from .audio_only_style_axes import resolve_audio_only_style
 
 
@@ -181,6 +183,7 @@ def _normalize_system_content(system_text: str) -> Dict[str, Any]:
 def _call_gpt5_responses(
     client: OpenAI,
     messages: List[Dict[str, Any]],
+    model_name: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """
     audio_only_lecture 専用:
@@ -189,7 +192,7 @@ def _call_gpt5_responses(
     戻り値の形式は ask_gpt と合わせて:
         [{"response": resp, "result": ""}]
     """
-    modelname = API_MODEL_EXPLANATION or "gpt-5"
+    modelname = model_name or config.API_MODEL_EXPLANATION or "gpt-5"
 
     resp = client.responses.create(
         model=modelname,
@@ -569,9 +572,104 @@ class MaterialsResult:
     materials_all_path: Path
 
 
+def _material_slide_path(audio_only_dir: Path, slide_index: int) -> Path:
+    return audio_only_dir / f"materials_slide_{slide_index:03d}.txt"
+
+
+def _audio_shared_cache_ready(shared_cache_dir: Path, slide_count: int) -> bool:
+    required = [
+        shared_cache_dir / "materials_all.txt",
+        shared_cache_dir / "outline.json",
+        shared_cache_dir / "outline.txt",
+        shared_cache_dir / "lecture_script.txt",
+    ]
+    if not all(path.exists() for path in required):
+        return False
+    return all(_material_slide_path(shared_cache_dir, idx).exists() for idx in range(1, slide_count + 1))
+
+
+def _restore_audio_shared_cache(shared_cache_dir: Path, audio_only_dir: Path, slide_count: int) -> None:
+    audio_only_dir.mkdir(parents=True, exist_ok=True)
+    for idx in range(1, slide_count + 1):
+        shutil.copy2(_material_slide_path(shared_cache_dir, idx), _material_slide_path(audio_only_dir, idx))
+    for name in ("materials_all.txt", "outline.json", "outline.txt", "lecture_script.txt"):
+        shutil.copy2(shared_cache_dir / name, audio_only_dir / name)
+
+
+def _save_audio_shared_cache(audio_only_dir: Path, shared_cache_dir: Path, slide_count: int) -> None:
+    shared_cache_dir.mkdir(parents=True, exist_ok=True)
+    for idx in range(1, slide_count + 1):
+        src = _material_slide_path(audio_only_dir, idx)
+        if src.exists():
+            shutil.copy2(src, _material_slide_path(shared_cache_dir, idx))
+    for name in ("materials_all.txt", "outline.json", "outline.txt", "lecture_script.txt"):
+        src = audio_only_dir / name
+        if src.exists():
+            shutil.copy2(src, shared_cache_dir / name)
+
+
+def _build_materials_result_from_cache(paths: ProjectPaths, audio_only_dir: Path) -> MaterialsResult:
+    img_paths = collect_slide_images(Path(paths.img_root))
+    slide_paths = [_material_slide_path(audio_only_dir, idx) for idx in range(1, len(img_paths) + 1)]
+    return MaterialsResult(
+        audio_only_dir=audio_only_dir,
+        img_paths=img_paths,
+        materials_slide_paths=slide_paths,
+        materials_all_path=audio_only_dir / "materials_all.txt",
+    )
+
+
+def _extract_material_for_slide(
+    client: OpenAI,
+    slide_index: int,
+    total_slides: int,
+    img_path: Path,
+    debug_dir: Path,
+    model_name: str,
+) -> Tuple[int, str]:
+    text_prompt = SLIDE_MATERIAL_PROMPT.format(
+        slide_index=slide_index,
+        total_slides=total_slides,
+    )
+
+    system_message = _normalize_system_content(SYSTEM_MATERIAL)
+    user_message = _build_user_message_with_image(text_prompt, img_path)
+    messages = [system_message, user_message]
+
+    resp_list = _call_gpt5_responses(client, messages, model_name=model_name)
+    debug_raw_path = debug_dir / f"slide_{slide_index:03d}_raw.txt"
+    _save_debug_response(debug_raw_path, resp_list)
+
+    try:
+        material_text = _extract_text_from_response(
+            resp_list,
+            step_name="材料抽出",
+            context=f"slide={slide_index}",
+        )
+    except Exception as e:
+        print(f"[audio_only] ⚠ 材料抽出エラー（slide {slide_index}）: {e}")
+        material_text = (
+            f"【注意】スライド {slide_index} から材料抽出中にエラーが発生しました。\n"
+            "詳細は _debug_raw_materials のログを確認してください。"
+        )
+
+    if not material_text or not material_text.strip():
+        print(f"[audio_only] ⚠ モデル応答が空でした: slide {slide_index}")
+        material_text = (
+            f"【注意】スライド {slide_index} から抽出できる講義材料が "
+            "モデル応答として空でした。\n"
+            "このスライドには、講義ナレーションに直接使えるテキスト情報が "
+            "ほとんど含まれていない可能性があります。"
+        )
+
+    return slide_index, material_text.strip()
+
+
 def step_extract_materials(
     client: OpenAI,
     paths: ProjectPaths,
+    max_workers: int = 1,
+    model_name: Optional[str] = None,
 ) -> MaterialsResult:
     """
     各スライド画像から講義ナレーションの「材料テキスト」を抽出する。
@@ -589,57 +687,48 @@ def step_extract_materials(
 
     debug_dir = audio_only_dir / "_debug_raw_materials"
     debug_dir.mkdir(parents=True, exist_ok=True)
+    model_name = model_name or config.API_MODEL_AUDIO_MATERIAL
 
-    for idx, img_path_str in enumerate(img_paths, start=1):
-        img_path = Path(img_path_str)
+    indexed_materials: Dict[int, str] = {}
+    if max_workers <= 1:
+        for idx, img_path_str in enumerate(img_paths, start=1):
+            img_path = Path(img_path_str)
+            print(f"[audio_only] 材料抽出: Slide {idx}/{total_slides}: {img_path}")
+            slide_index, material_text = _extract_material_for_slide(
+                client=client,
+                slide_index=idx,
+                total_slides=total_slides,
+                img_path=img_path,
+                debug_dir=debug_dir,
+                model_name=model_name,
+            )
+            indexed_materials[slide_index] = material_text
+    else:
+        print(f"[audio_only] 材料抽出: 並列度={max_workers} で実行します")
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = [
+                executor.submit(
+                    _extract_material_for_slide,
+                    client,
+                    idx,
+                    total_slides,
+                    Path(img_path_str),
+                    debug_dir,
+                    model_name,
+                )
+                for idx, img_path_str in enumerate(img_paths, start=1)
+            ]
+            for future in as_completed(futures):
+                slide_index, material_text = future.result()
+                indexed_materials[slide_index] = material_text
+
+    for idx in range(1, total_slides + 1):
         slide_str = f"{idx:03d}"
-        print(f"[audio_only] 材料抽出: Slide {idx}/{total_slides}: {img_path}")
-
-        text_prompt = SLIDE_MATERIAL_PROMPT.format(
-            slide_index=idx,
-            total_slides=total_slides,
-        )
-
-        system_message = _normalize_system_content(SYSTEM_MATERIAL)
-        user_message = _build_user_message_with_image(text_prompt, img_path)
-
-        messages = [system_message, user_message]
-
-        resp_list = _call_gpt5_responses(client, messages)
-
-        debug_raw_path = debug_dir / f"slide_{slide_str}_raw.txt"
-        _save_debug_response(debug_raw_path, resp_list)
-
-        try:
-            material_text = _extract_text_from_response(
-                resp_list,
-                step_name="材料抽出",
-                context=f"slide={idx}",
-            )
-        except Exception as e:
-            print(f"[audio_only] ⚠ 材料抽出エラー（slide {idx}）: {e}")
-            material_text = (
-                f"【注意】スライド {idx} から材料抽出中にエラーが発生しました。\n"
-                "詳細は _debug_raw_materials のログを確認してください。"
-            )
-
-        if not material_text or not material_text.strip():
-            print(f"[audio_only] ⚠ モデル応答が空でした: slide {idx}")
-            material_text = (
-                f"【注意】スライド {idx} から抽出できる講義材料が "
-                "モデル応答として空でした。\n"
-                "このスライドには、講義ナレーションに直接使えるテキスト情報が "
-                "ほとんど含まれていない可能性があります。"
-            )
-
-        material_text = material_text.strip()
-
-        slide_path = audio_only_dir / f"materials_slide_{slide_str}.txt"
+        material_text = indexed_materials[idx]
+        slide_path = _material_slide_path(audio_only_dir, idx)
         slide_path.write_text(material_text, encoding="utf-8")
         materials_slide_paths.append(slide_path)
-
         all_buf.append(f"# [slide_{slide_str}]\n{material_text}\n\n")
-
         print(f"[audio_only] Slide {idx}: 抽出テキスト長 = {len(material_text)} 文字")
 
     materials_all_path = audio_only_dir / "materials_all.txt"
@@ -672,6 +761,7 @@ def step_generate_outline(
     materials_all_path: Path,
     audio_only_dir: Path,
     img_paths: List[str],
+    model_name: Optional[str] = None,
 ) -> OutlineResult:
     """
     materials_all.txt と全スライド画像をもとに、
@@ -694,7 +784,7 @@ def step_generate_outline(
 
     print("[audio_only] アウトライン生成中...")
 
-    resp_list = _call_gpt5_responses(client, messages)
+    resp_list = _call_gpt5_responses(client, messages, model_name=model_name or config.API_MODEL_AUDIO_OUTLINE)
 
     debug_path = audio_only_dir / "_debug_outline_raw.txt"
     _save_debug_response(debug_path, resp_list)
@@ -773,6 +863,7 @@ def step_generate_narration(
     outline_json: Dict[str, Any],
     audio_only_dir: Path,
     img_paths: List[str],
+    model_name: Optional[str] = None,
 ) -> Path:
     """
     章ごとのナレーションを生成し、連結して 1 ファイルに保存する。
@@ -853,7 +944,7 @@ def step_generate_narration(
             _build_user_message_with_images(user_content, chapter_img_paths),
         ]
 
-        resp_list = _call_gpt5_responses(client, messages)
+        resp_list = _call_gpt5_responses(client, messages, model_name=model_name or config.API_MODEL_AUDIO_NARRATION)
 
         debug_path = audio_only_dir / f"_debug_narration_raw_ch_{cid}.txt"
         _save_debug_response(debug_path, resp_list)
@@ -894,6 +985,7 @@ def step_stitch_script(
     script_path: Path,
     level: str,
     detail: str,
+    model_name: Optional[str] = None,
 ) -> Path:
     """
     生成済みの lecture_script.txt を読み込み、
@@ -928,7 +1020,7 @@ def step_stitch_script(
 
     print(f"[audio_only] ステッチ中... ({script_path.name}) [style={style.style_label}]")
 
-    resp_list = _call_gpt5_responses(client, messages)
+    resp_list = _call_gpt5_responses(client, messages, model_name=model_name or config.API_MODEL_AUDIO_STITCH)
 
     debug_path = script_path.parent / f"_debug_stitch_raw_{script_path.name}.txt"
     _save_debug_response(debug_path, resp_list)
@@ -974,42 +1066,77 @@ def generate_audio_only_lecture(
     level: str = "L3",
     detail: str = "D2",
     do_stitch: bool = True,
+    shared_cache_dir: Optional[Path] = None,
+    material_workers: Optional[int] = None,
+    progress_callback: Optional[Callable[[int, str], None]] = None,
 ) -> Dict[str, Any]:
     """
     音声のみ講義フローを実行するメイン関数。
 
     - level/detail はステッチ時のスタイル指定にのみ使用する。
     """
-    # 1) 材料抽出
-    mres = step_extract_materials(client, paths)
-    audio_only_dir = mres.audio_only_dir
-    materials_all_path = mres.materials_all_path
+    def report(progress: int, message: str) -> None:
+        if progress_callback is not None:
+            progress_callback(progress, message)
 
-    # 2) アウトライン生成（全スライド画像も渡す）
-    ores = step_generate_outline(
-        client,
-        materials_all_path,
-        audio_only_dir,
-        img_paths=mres.img_paths,
-    )
-    outline_json = ores.outline_json
+    audio_only_dir = ensure_audio_only_dir(paths)
+    slide_count = len(collect_slide_images(Path(paths.img_root)))
 
-    # 3) ナレーション生成（1本）
-    script_raw_path = step_generate_narration(
-        client=client,
-        materials_slide_paths=mres.materials_slide_paths,
-        outline_json=outline_json,
-        audio_only_dir=audio_only_dir,
-        img_paths=mres.img_paths,
-    )
+    if shared_cache_dir and _audio_shared_cache_ready(shared_cache_dir, slide_count):
+        report(48, "音声用の中間キャッシュを再利用しています")
+        _restore_audio_shared_cache(shared_cache_dir, audio_only_dir, slide_count)
+        mres = _build_materials_result_from_cache(paths, audio_only_dir)
+        outline_json = json.loads((audio_only_dir / "outline.json").read_text(encoding="utf-8"))
+        ores = OutlineResult(
+            outline_json=outline_json,
+            outline_json_path=audio_only_dir / "outline.json",
+            outline_txt_path=audio_only_dir / "outline.txt",
+            lecture_title=str(outline_json.get("title") or "音声講義"),
+        )
+        script_raw_path = audio_only_dir / "lecture_script.txt"
+    else:
+        report(38, "スライド材料を抽出しています")
+        mres = step_extract_materials(
+            client,
+            paths,
+            max_workers=material_workers or config.AUDIO_MATERIAL_MAX_WORKERS,
+            model_name=config.API_MODEL_AUDIO_MATERIAL,
+        )
+        audio_only_dir = mres.audio_only_dir
+        materials_all_path = mres.materials_all_path
+
+        report(56, "アウトラインを生成しています")
+        ores = step_generate_outline(
+            client,
+            materials_all_path,
+            audio_only_dir,
+            img_paths=mres.img_paths,
+            model_name=config.API_MODEL_AUDIO_OUTLINE,
+        )
+        outline_json = ores.outline_json
+
+        report(70, "章ごとのナレーションを生成しています")
+        script_raw_path = step_generate_narration(
+            client=client,
+            materials_slide_paths=mres.materials_slide_paths,
+            outline_json=outline_json,
+            audio_only_dir=audio_only_dir,
+            img_paths=mres.img_paths,
+            model_name=config.API_MODEL_AUDIO_NARRATION,
+        )
+
+        if shared_cache_dir:
+            _save_audio_shared_cache(audio_only_dir, shared_cache_dir, len(mres.img_paths))
 
     # 4) ステッチ（任意）
     if do_stitch:
+        report(78, "音声用スクリプトを整えています")
         script_final_path = step_stitch_script(
             client=client,
             script_path=script_raw_path,
             level=level,
             detail=detail,
+            model_name=config.API_MODEL_AUDIO_STITCH,
         )
     else:
         script_final_path = script_raw_path
@@ -1040,6 +1167,9 @@ def run_audio_only_lecture(
     level: str = "L3",
     detail: str = "D2",
     do_stitch: bool = True,
+    shared_cache_dir: Optional[Path] = None,
+    material_workers: Optional[int] = None,
+    progress_callback: Optional[Callable[[int, str], None]] = None,
 ) -> Dict[str, Any]:
     """
     gpt_client.create_client() を使ってクライアントを生成し、
@@ -1054,4 +1184,7 @@ def run_audio_only_lecture(
         level=level,
         detail=detail,
         do_stitch=do_stitch,
+        shared_cache_dir=shared_cache_dir,
+        material_workers=material_workers,
+        progress_callback=progress_callback,
     )

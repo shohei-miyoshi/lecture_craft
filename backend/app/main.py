@@ -8,8 +8,9 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from .jobs import get_job_manager
 from .models import ExportRequest, GenerateRequest
-from .service import ApiError, export_media, generate_media
+from .service import ApiError, export_media
 
 
 app = FastAPI(title="Kenkyu Backend API")
@@ -63,9 +64,19 @@ def health_endpoint():
     }
 
 
+@app.on_event("startup")
+def startup_event() -> None:
+    get_job_manager()
+
+
 @app.post("/api/generate")
 def generate_endpoint(req: GenerateRequest):
-    return generate_media(req)
+    return JSONResponse(status_code=202, content=get_job_manager().submit_generate(req))
+
+
+@app.get("/api/jobs/{job_id}")
+def job_status_endpoint(job_id: str):
+    return get_job_manager().get_job(job_id)
 
 
 @app.post("/api/export")

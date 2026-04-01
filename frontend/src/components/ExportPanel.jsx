@@ -82,6 +82,9 @@ export default function ExportPanel({ state, dispatch, addToast }) {
           slides: state.slides,
           sentences: state.sents,
           highlights: state.hls,
+          source_cache_key: state.genRef?.cache_key ?? null,
+          source_material_name: state.genRef?.material_name ?? null,
+          source_output_root_name: state.genRef?.output_root_name ?? null,
           settings: {
             detail: DETAIL_VALS[state.detail],
             difficulty: DIFF_VALS[state.level],

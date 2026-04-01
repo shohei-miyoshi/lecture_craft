@@ -24,4 +24,7 @@ class ExportRequest(BaseModel):
     slides: List[Dict[str, Any]] = Field(default_factory=list)
     sentences: List[Dict[str, Any]] = Field(default_factory=list)
     highlights: List[Dict[str, Any]] = Field(default_factory=list)
+    source_cache_key: Optional[str] = None
+    source_material_name: Optional[str] = None
+    source_output_root_name: Optional[str] = None
     settings: ExportSettings = Field(default_factory=ExportSettings)

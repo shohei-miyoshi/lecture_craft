@@ -10,7 +10,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from fastapi.responses import FileResponse
 from PIL import Image
@@ -23,6 +23,14 @@ if str(PROJECT_ROOT) not in sys.path:
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
+from .cache import (
+    GenerateCachePlan,
+    build_generate_cache_plan,
+    decode_pdf_base64,
+    get_named_lock,
+    load_cached_generate_response,
+    write_cached_generate_response,
+)
 from .models import ExportRequest, GenerateRequest
 from auto_lecture import config as auto_config
 from auto_lecture.audio_only_lecture import run_audio_only_lecture
@@ -68,42 +76,91 @@ class SlideImageInfo:
     height: int
 
 
-def generate_media(req: GenerateRequest) -> Dict[str, Any]:
+def generate_media(
+    req: GenerateRequest,
+    progress_callback: Optional[Callable[[int, str], None]] = None,
+) -> Dict[str, Any]:
+    def report(progress: int, message: str) -> None:
+        if progress_callback is not None:
+            progress_callback(progress, message)
+
+    report(5, "生成計画を準備しています")
     level = LEVEL_MAP[req.difficulty]
     detail = DETAIL_MAP[req.detail]
-    material_name = make_material_name(req.filename)
-    output_root_name = make_output_root_name(req.mode, material_name)
+    try:
+        pdf_bytes = decode_pdf_base64(req.pdf_base64)
+    except ValueError as exc:
+        raise ApiError(400, "INVALID_PDF", str(exc)) from exc
+    plan = build_generate_cache_plan(req, pdf_bytes)
 
-    write_pdf_upload(material_name, req.pdf_base64)
-    write_pdf_images(material_name)
+    cached = load_cached_generate_response(plan)
+    if cached is not None:
+        report(100, "既存の生成結果キャッシュを利用しました")
+        return attach_generation_ref(cached, plan, cache_hit=True)
 
-    paths = build_paths(
-        teaching_material_file_name=material_name,
-        material_root=MATERIAL_ROOT,
-        output_root_name=output_root_name,
-    )
+    with get_named_lock(f"generate:{plan.request_key}"):
+        cached = load_cached_generate_response(plan)
+        if cached is not None:
+            report(100, "既存の生成結果キャッシュを利用しました")
+            return attach_generation_ref(cached, plan, cache_hit=True)
 
-    if req.mode == "audio":
-        script_result = run_audio_only_lecture(paths=paths, level=level, detail=detail, do_stitch=True)
-        script_path = Path(script_result["script_path"])
-        tts_from_textfile(text_file=script_path, paths=paths, mode="audio", fmt="mp3")
-        response = build_audio_generate_response(paths, script_result, req.mode, req.detail, req.difficulty)
-    else:
-        from auto_lecture.lp_processor import process_slides_with_lp
-        from scripts import run_all
+        material_name = plan.material_name
+        output_root_name = plan.output_root_name
 
-        process_slides_with_lp(paths)
-        run_all.run_pipeline(
+        report(12, "PDF をキャッシュに保存しています")
+        ensure_pdf_upload(material_name, pdf_bytes)
+        report(22, "スライド画像を準備しています")
+        ensure_pdf_images(material_name)
+
+        paths = build_paths(
             teaching_material_file_name=material_name,
             material_root=MATERIAL_ROOT,
-            level=level,
-            detail=detail,
             output_root_name=output_root_name,
         )
-        response = build_visual_generate_response(paths, req.mode, req.detail, req.difficulty)
 
-    write_api_meta(paths, mode=req.mode, material_name=material_name, detail=req.detail, difficulty=req.difficulty)
-    return response
+        if req.mode == "audio":
+            report(35, "音声用の材料を準備しています")
+            script_result = run_audio_only_lecture(
+                paths=paths,
+                level=level,
+                detail=detail,
+                do_stitch=True,
+                shared_cache_dir=plan.audio_shared_cache_dir,
+                material_workers=get_audio_material_worker_count(),
+                progress_callback=report,
+            )
+            script_path = Path(script_result["script_path"])
+            report(82, "音声を生成しています")
+            ensure_audio_tts(script_path, paths)
+            response = build_audio_generate_response(paths, script_result, req.mode, req.detail, req.difficulty)
+        else:
+            from scripts import run_all
+
+            ensure_lp_outputs(paths, report)
+            report(55, "動画パイプラインを実行しています")
+            run_all.run_pipeline(
+                teaching_material_file_name=material_name,
+                material_root=MATERIAL_ROOT,
+                level=level,
+                detail=detail,
+                output_root_name=output_root_name,
+            )
+            report(90, "生成結果を整形しています")
+            response = build_visual_generate_response(paths, req.mode, req.detail, req.difficulty)
+
+        response = attach_generation_ref(response, plan, cache_hit=False)
+        write_cached_generate_response(plan, response)
+        write_api_meta(
+            paths,
+            mode=req.mode,
+            material_name=material_name,
+            detail=req.detail,
+            difficulty=req.difficulty,
+            request_key=plan.request_key,
+            pdf_hash=plan.pdf_hash,
+        )
+        report(100, "生成が完了しました")
+        return response
 
 
 def export_media(req: ExportRequest) -> FileResponse:
@@ -449,22 +506,63 @@ def synthesize_sentence_audio_files(
     return part_paths
 
 
-def write_pdf_upload(material_name: str, pdf_b64: str) -> Path:
+def ensure_pdf_upload(material_name: str, pdf_bytes: bytes) -> Path:
     PDF_ROOT.mkdir(parents=True, exist_ok=True)
     pdf_path = PDF_ROOT / material_name
-    try:
-        pdf_path.write_bytes(base64.b64decode(pdf_b64))
-    except Exception as exc:
-        raise ApiError(400, "INVALID_PDF", "pdf_base64 could not be decoded") from exc
+    if not pdf_path.exists():
+        pdf_path.write_bytes(pdf_bytes)
     return pdf_path
 
 
-def write_pdf_images(material_name: str) -> List[str]:
+def ensure_pdf_images(material_name: str) -> List[str]:
     pdf_path = PDF_ROOT / material_name
     img_dir = IMG_ROOT / material_name
-    if img_dir.exists():
-        shutil.rmtree(img_dir)
+    if img_dir.exists() and list(img_dir.glob("*.png")):
+        return [str(path) for path in sorted(img_dir.glob("*.png"))]
     return pdf_to_images(str(pdf_path), str(img_dir), dpi=150)
+
+
+def ensure_audio_tts(script_path: Path, paths: ProjectPaths) -> Path:
+    out_path = Path(paths.tts_output_dir) / "lecture_audio.mp3"
+    if out_path.exists():
+        return out_path
+    tts_from_textfile(text_file=script_path, paths=paths, mode="audio", fmt="mp3")
+    return out_path
+
+
+def lp_outputs_ready(paths: ProjectPaths) -> bool:
+    slide_paths = sorted(Path(paths.img_root).glob("*.png"))
+    if not slide_paths:
+        return False
+    for idx in range(1, len(slide_paths) + 1):
+        if not (Path(paths.lp_dir) / f"result_{idx:03d}.json").exists():
+            return False
+    return True
+
+
+def ensure_lp_outputs(
+    paths: ProjectPaths,
+    progress_callback: Optional[Callable[[int, str], None]] = None,
+) -> None:
+    def report(progress: int, message: str) -> None:
+        if progress_callback is not None:
+            progress_callback(progress, message)
+
+    if lp_outputs_ready(paths):
+        report(42, "既存のレイアウト解析結果を再利用しています")
+        return
+
+    from auto_lecture.lp_processor import process_slides_with_lp
+
+    report(40, "レイアウト解析を実行しています")
+    process_slides_with_lp(paths)
+
+
+def get_audio_material_worker_count() -> int:
+    try:
+        return max(1, int(getattr(auto_config, "AUDIO_MATERIAL_MAX_WORKERS", 3)))
+    except Exception:
+        return 1
 
 
 def write_slide_images_from_payload(slides: Sequence[Dict[str, Any]], out_dir: Path) -> List[SlideImageInfo]:
@@ -614,14 +712,25 @@ def slide_color(index: int) -> str:
     return colors[index % len(colors)]
 
 
-def make_material_name(filename: str) -> str:
-    stem = Path(filename).stem or "lecture"
-    safe = re.sub(r"[^0-9A-Za-z._ぁ-んァ-ヶ一-龠-]+", "_", stem).strip("_") or "lecture"
-    return f"{safe}_{timestamp_slug()}_{short_id()}.pdf"
-
-
-def make_output_root_name(mode: str, material_name: str) -> str:
-    return f"api_runs/{mode}/{Path(material_name).stem}_{timestamp_slug()}_{short_id()}"
+def attach_generation_ref(
+    response: Dict[str, Any],
+    plan: GenerateCachePlan,
+    *,
+    cache_hit: bool,
+) -> Dict[str, Any]:
+    payload = dict(response)
+    generation_ref = dict(payload.get("generation_ref") or {})
+    generation_ref.update(
+        {
+            "cache_key": plan.request_key,
+            "pdf_hash": plan.pdf_hash,
+            "material_name": plan.material_name,
+            "output_root_name": plan.output_root_name,
+            "cache_hit": cache_hit,
+        }
+    )
+    payload["generation_ref"] = generation_ref
+    return payload
 
 
 def timestamp_slug() -> str:
@@ -663,12 +772,16 @@ def write_api_meta(
     material_name: str,
     detail: str,
     difficulty: str,
+    request_key: Optional[str] = None,
+    pdf_hash: Optional[str] = None,
 ) -> None:
     meta = {
         "mode": mode,
         "material_name": material_name,
         "detail": detail,
         "difficulty": difficulty,
+        "request_key": request_key,
+        "pdf_hash": pdf_hash,
         "output_dir": str(paths.output_dir),
         "created_at": datetime.now().isoformat(timespec="seconds"),
     }

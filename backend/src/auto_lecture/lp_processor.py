@@ -1,9 +1,11 @@
 # src/auto_lecture/lp_processor.py
 from __future__ import annotations
 
+from functools import lru_cache
 from pathlib import Path
 import json
 import re
+import threading
 from typing import List, Dict, Any
 
 import layoutparser as lp
@@ -25,12 +27,16 @@ if not hasattr(ImageFont.FreeTypeFont, "getsize"):
 # ----------------------------------------------------------------------
 # モデル構築（元コード準拠だがパスはProjectPathsに合わせる）
 # ----------------------------------------------------------------------
-def build_lp_model(project_root: Path):
-    model_path = project_root / "models" / "model_final.pth"
+_LP_MODEL_LOCK = threading.Lock()
+
+
+@lru_cache(maxsize=2)
+def _build_lp_model_cached(model_path_str: str):
+    model_path = Path(model_path_str)
     if not model_path.exists():
         raise FileNotFoundError(f"LayoutParser model not found: {model_path}")
 
-    model = lp.Detectron2LayoutModel(
+    return lp.Detectron2LayoutModel(
         config_path="lp://PubLayNet/faster_rcnn_R_50_FPN_3x/config",
         model_path=str(model_path),
         label_map={0: "Text", 1: "Title", 2: "List", 3: "Table", 4: "Figure"},
@@ -41,7 +47,12 @@ def build_lp_model(project_root: Path):
             "INPUT.MAX_SIZE_TEST", 1333
         ]
     )
-    return model
+
+
+def build_lp_model(project_root: Path):
+    model_path = (project_root / "models" / "model_final.pth").resolve()
+    with _LP_MODEL_LOCK:
+        return _build_lp_model_cached(str(model_path))
 
 
 # ----------------------------------------------------------------------
@@ -186,4 +197,3 @@ def process_slides_with_lp(paths: ProjectPaths):
             region_path = out_dir / f"region_{stem}_{idx}_{ele.type}.png"
             pil_orig.save(region_path)
             print(f"  🖼 個別領域: {region_path}")
-
