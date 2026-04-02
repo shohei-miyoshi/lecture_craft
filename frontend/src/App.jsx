@@ -16,6 +16,16 @@ import AdminDashboard from "./components/AdminDashboard.jsx";
 import ProjectHome from "./components/ProjectHome.jsx";
 import { buildProjectPayload, fingerprintProjectState, saveProject } from "./utils/projectStore.js";
 
+function parseRouteFromHash(hashValue) {
+  if (hashValue === "#admin") {
+    return { view: "admin", studioScreen: "home" };
+  }
+  if (hashValue === "#editor") {
+    return { view: "studio", studioScreen: "editor" };
+  }
+  return { view: "studio", studioScreen: "home" };
+}
+
 /** リサイズハンドル（縦線） */
 function ResizeHandle({ onMouseDown, resizing }) {
   return (
@@ -38,11 +48,12 @@ function ResizeHandle({ onMouseDown, resizing }) {
 }
 
 export default function App() {
+  const initialRoute = parseRouteFromHash(window.location.hash);
   const [state, dispatch]         = useReducer(reducer, INITIAL_STATE);
   const [pdfFile, setPdfFile]     = useState(null);
   const [tab, setTab]             = useState("editor");
-  const [view, setView]           = useState(() => (window.location.hash === "#admin" ? "admin" : "studio"));
-  const [studioScreen, setStudioScreen] = useState("home");
+  const [view, setView]           = useState(initialRoute.view);
+  const [studioScreen, setStudioScreen] = useState(initialRoute.studioScreen);
   const { toasts, addToast }      = useToast();
   const { confirmProps, requestConfirm, requestPrompt } = useConfirm();
   const { layout, startResizeLeft, startResizeRight, resizingLeft, resizingRight, resetLayout } = useResizableLayout();
@@ -62,6 +73,26 @@ export default function App() {
           },
         }
       : null;
+
+  const setStudioRoute = (nextScreen, historyMode = "push") => {
+    const nextHash = nextScreen === "editor" ? "#editor" : "";
+    setView("studio");
+    setStudioScreen(nextScreen);
+    if (historyMode === "replace") {
+      window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}${nextHash}`);
+    } else if (window.location.hash !== nextHash) {
+      window.history.pushState(null, "", `${window.location.pathname}${window.location.search}${nextHash}`);
+    }
+  };
+
+  const setAdminRoute = (historyMode = "push") => {
+    setView("admin");
+    if (historyMode === "replace") {
+      window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}#admin`);
+    } else if (window.location.hash !== "#admin") {
+      window.history.pushState(null, "", `${window.location.pathname}${window.location.search}#admin`);
+    }
+  };
 
   const persistProject = async (forcedName = null) => {
     const name = forcedName ?? state.projectMeta?.name ?? pdfFile?.name?.replace(/\.pdf$/i, "") ?? "新しいプロジェクト";
@@ -127,7 +158,7 @@ export default function App() {
     if (!state.generated) {
       dispatch({ type: "RESET" });
       setPdfFile(null);
-      setStudioScreen("home");
+      setStudioRoute("home");
       return;
     }
     confirmDirtyAction(() => {
@@ -141,7 +172,7 @@ export default function App() {
         onConfirm: () => {
           dispatch({ type: "RESET" });
           setPdfFile(null);
-          setStudioScreen("home");
+          setStudioRoute("home");
         },
       });
     }, "リセット");
@@ -152,7 +183,7 @@ export default function App() {
       dispatch({ type: "RESET" });
       setPdfFile(nextPdfFile);
       setTab("editor");
-      setStudioScreen("editor");
+      setStudioRoute("editor");
       if (nextPdfFile) {
         addToast("in", `📑 ${nextPdfFile.name}`);
       }
@@ -165,48 +196,25 @@ export default function App() {
       dispatch({ type: "LOAD", d: project.data });
       setPdfFile(null);
       setTab("editor");
-      setStudioScreen("editor");
+      setStudioRoute("editor");
       addToast("ok", `プロジェクト「${project.name}」を読み込みました`);
     }, "別のプロジェクトを開く");
   };
 
   const goHome = () => {
-    setView("studio");
-    window.location.hash = "";
-    setStudioScreen("home");
+    setStudioRoute("home");
   };
 
   // ── キーボードショートカット ──
   useEffect(() => {
-    const onHashChange = () => setView(window.location.hash === "#admin" ? "admin" : "studio");
+    const onHashChange = () => {
+      const route = parseRouteFromHash(window.location.hash);
+      setView(route.view);
+      setStudioScreen(route.studioScreen);
+    };
     window.addEventListener("hashchange", onHashChange);
     return () => window.removeEventListener("hashchange", onHashChange);
   }, []);
-
-  useEffect(() => {
-    const onMouseSide = (e) => {
-      if (view === "admin" || studioScreen === "home") return;
-      if (e.button === 3) {
-        e.preventDefault();
-        e.stopPropagation();
-        dispatch({ type: "UNDO" });
-      } else if (e.button === 4) {
-        e.preventDefault();
-        e.stopPropagation();
-        dispatch({ type: "REDO" });
-      }
-    };
-    window.addEventListener("mousedown", onMouseSide, true);
-    window.addEventListener("mouseup", onMouseSide, true);
-    window.addEventListener("click", onMouseSide, true);
-    window.addEventListener("auxclick", onMouseSide, true);
-    return () => {
-      window.removeEventListener("mousedown", onMouseSide, true);
-      window.removeEventListener("mouseup", onMouseSide, true);
-      window.removeEventListener("click", onMouseSide, true);
-      window.removeEventListener("auxclick", onMouseSide, true);
-    };
-  }, [view, studioScreen]);
 
   useEffect(() => {
     const handler = (e) => {
@@ -299,8 +307,11 @@ export default function App() {
   }, [state.playing, state.curSl, state.slides.length, state.selHl, confirmProps.open, view, studioScreen]);
 
   const switchView = (nextView) => {
-    setView(nextView);
-    window.location.hash = nextView === "admin" ? "admin" : "";
+    if (nextView === "admin") {
+      setAdminRoute();
+      return;
+    }
+    setStudioRoute(studioScreen === "editor" ? "editor" : "home");
   };
 
   return (
@@ -412,7 +423,7 @@ export default function App() {
         <ProjectHome
           onCreateProject={handleCreateProject}
           onOpenProject={handleOpenProject}
-          onResumeEditing={() => setStudioScreen("editor")}
+          onResumeEditing={() => setStudioRoute("editor")}
           currentProject={currentWorkspace}
           requestConfirm={requestConfirm}
           requestPrompt={requestPrompt}
