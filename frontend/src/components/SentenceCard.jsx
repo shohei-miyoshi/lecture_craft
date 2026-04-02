@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef } from "react";
-import HlSummaryBar from "./HlSummaryBar.jsx";
 import HlEditor     from "./HlEditor.jsx";
 import AiPanel      from "./AiPanel.jsx";
 import { fmt } from "../utils/helpers.js";
@@ -43,9 +42,16 @@ export default function SentenceCard({
       title:        "文を削除",
       message:      `「${sent.text.substring(0, 40)}${sent.text.length > 40 ? "…" : ""}」\nを削除しますか？この操作は取り消せません。`,
       confirmLabel: "削除",
-      onConfirm:    () => dispatch({ type: "DEL_SENT", v: sent.id }),
+      onConfirm:    () => {
+        dispatch({ type: "PUSH_HISTORY" });
+        dispatch({ type: "DEL_SENT", v: sent.id });
+      },
     });
   };
+
+  const railLabel = hl ? `HL\n${HlRailLabel(hl.kind)}` : "HL\n未設定";
+  const railColor = hl ? "var(--tp)" : "var(--tm)";
+  const railBg = hl ? `linear-gradient(180deg, ${hlColorBg(hl.kind)}, rgba(255,255,255,.03))` : "var(--s3)";
 
   return (
     <div
@@ -56,9 +62,36 @@ export default function SentenceCard({
         background:   isSel ? "var(--s2)" : isPlay ? "var(--adim)" : "transparent",
         borderLeft:   isPlay ? "3px solid var(--ac)" : "none",
         transition:   "background .15s",
+        position: "relative",
       }}
     >
-      <div style={{ padding: "9px 12px" }}>
+      {showHl && (
+        <button
+          onClick={(e) => { e.stopPropagation(); sel(); setHlOpen((p) => !p); setAiOpen(false); }}
+          style={{
+            position: "absolute",
+            left: 0,
+            top: 0,
+            bottom: 0,
+            width: 26,
+            border: "none",
+            borderRight: "1px solid var(--bd)",
+            background: railBg,
+            color: railColor,
+            fontFamily: "var(--fm)",
+            fontSize: 9,
+            whiteSpace: "pre-line",
+            lineHeight: 1.15,
+            cursor: "pointer",
+            textAlign: "center",
+            padding: "8px 2px",
+          }}
+        >
+          {railLabel}
+        </button>
+      )}
+
+      <div style={{ padding: "9px 12px", paddingLeft: showHl ? 36 : 12 }}>
 
         {/* ヘッダー行 */}
         <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 6, flexWrap: "wrap" }}>
@@ -107,21 +140,16 @@ export default function SentenceCard({
             suppressContentEditableWarning
             onBlur={(e) => {
               const t = e.currentTarget.textContent;
-              if (t !== sent.text) dispatch({ type: "UPD_TXT", id: sent.id, text: t });
+              if (t !== sent.text) {
+                dispatch({ type: "PUSH_HISTORY" });
+                dispatch({ type: "UPD_TXT", id: sent.id, text: t });
+              }
             }}
             style={{ fontSize: 12, lineHeight: 1.62, color: "var(--tp)", borderRadius: 3, padding: "20px 28px 5px 4px", display: "block", width: "100%", outline: "none", cursor: "text" }}
           >
             {txt}
           </div>
         </div>
-
-        {showHl && (
-          <HlSummaryBar
-            hl={hl}
-            sent={sent}
-            onClick={(e) => { e.stopPropagation(); sel(); setHlOpen((p) => !p); setAiOpen(false); }}
-          />
-        )}
 
         {timingOpen && !showHl && <TimingEditor sent={sent} dispatch={dispatch} />}
 
@@ -147,6 +175,32 @@ export default function SentenceCard({
   );
 }
 
+function HlRailLabel(kind) {
+  switch (kind) {
+    case "marker":
+      return "マー\nカー";
+    case "arrow":
+      return "矢印";
+    case "box":
+      return "囲み";
+    default:
+      return "設定";
+  }
+}
+
+function hlColorBg(kind) {
+  switch (kind) {
+    case "marker":
+      return "rgba(91,141,239,.28)";
+    case "arrow":
+      return "rgba(76,175,130,.26)";
+    case "box":
+      return "rgba(232,169,75,.26)";
+    default:
+      return "rgba(255,255,255,.04)";
+  }
+}
+
 function TimingEditor({ sent, dispatch }) {
   const [start, setStart] = useState(String(sent.start_sec));
   const [end,   setEnd]   = useState(String(sent.end_sec));
@@ -155,6 +209,7 @@ function TimingEditor({ sent, dispatch }) {
     const s = parseFloat(start);
     const e = parseFloat(end);
     if (isNaN(s) || isNaN(e) || e <= s) return;
+    dispatch({ type: "PUSH_HISTORY" });
     dispatch({ type: "UPD_SENT_TIME", id: sent.id, start_sec: s, end_sec: e });
   };
 

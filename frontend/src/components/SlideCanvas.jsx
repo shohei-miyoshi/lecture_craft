@@ -26,11 +26,12 @@ function clampPan(nextPan, zoom, baseSize) {
   };
 }
 
-export default function SlideCanvas({ state, dispatch }) {
+export default function SlideCanvas({ state, dispatch, addToast }) {
   const viewportRef = useRef(null);
   const stageRef = useRef(null);
   const drawRef = useRef(null);
   const panRef = useRef(null);
+  const wheelSwitchRef = useRef(0);
   const [ghost, setGhost] = useState(null);
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -95,8 +96,20 @@ export default function SlideCanvas({ state, dispatch }) {
 
   const onWheel = (e) => {
     e.preventDefault();
-    const delta = e.deltaY < 0 ? 0.1 : -0.1;
-    setZoomSafe(Number((zoom + delta).toFixed(2)));
+    if (e.ctrlKey || e.metaKey) {
+      const delta = e.deltaY < 0 ? 0.1 : -0.1;
+      setZoomSafe(Number((zoom + delta).toFixed(2)));
+      return;
+    }
+    const now = Date.now();
+    if (now - wheelSwitchRef.current < 180) return;
+    wheelSwitchRef.current = now;
+    const nextSlide = e.deltaY > 0
+      ? Math.min(state.slides.length - 1, state.curSl + 1)
+      : Math.max(0, state.curSl - 1);
+    if (nextSlide !== state.curSl) {
+      dispatch({ type: "SET_SL", v: nextSlide });
+    }
   };
 
   const startPan = (e) => {
@@ -142,6 +155,29 @@ export default function SlideCanvas({ state, dispatch }) {
     const sy = ((e.clientY - rc.top) / rc.height) * 100;
     drawRef.current = { sx, sy };
     setGhost({ x: sx, y: sy, w: 0, h: 0 });
+  };
+
+  const onStageDoubleClick = (e) => {
+    if (state.drawMode || !showBB) return;
+    const selectedSentence = state.sents.find((s) => s.id === state.selSent);
+    if (!selectedSentence || selectedSentence.slide_idx !== state.curSl) {
+      addToast?.("in", "先にこのスライド上の文を選択してから、ダブルクリックで枠を追加してください");
+      return;
+    }
+    const rc = stageRef.current?.getBoundingClientRect();
+    if (!rc) return;
+    const cx = ((e.clientX - rc.left) / rc.width) * 100;
+    const cy = ((e.clientY - rc.top) / rc.height) * 100;
+    const region = {
+      x: rn(clamp(cx - 8, 0, 84)),
+      y: rn(clamp(cy - 6, 0, 88)),
+      w: 16,
+      h: 12,
+    };
+    const kind = state.hls.find((h) => h.sid === selectedSentence.id)?.kind ?? "marker";
+    dispatch({ type: "PUSH_HISTORY" });
+    dispatch({ type: "APPLY_REGION", sid: selectedSentence.id, region, kind });
+    addToast?.("ok", "選択中の文にハイライト枠を追加しました");
   };
 
   useEffect(() => {
@@ -252,6 +288,7 @@ export default function SlideCanvas({ state, dispatch }) {
       <div
         ref={stageRef}
         onMouseDown={onStageMouseDown}
+        onDoubleClick={onStageDoubleClick}
         style={stageStyle}
       >
         {slide?.image_base64 ? (

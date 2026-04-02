@@ -77,6 +77,19 @@ export default function App() {
       if (view === "admin") return;
       if (["INPUT", "TEXTAREA"].includes(e.target.tagName) || e.target.contentEditable === "true") return;
       if (confirmProps.open) return;
+      if ((e.metaKey || e.ctrlKey) && e.code === "KeyZ" && !e.shiftKey) {
+        e.preventDefault();
+        dispatch({ type: "UNDO" });
+        return;
+      }
+      if (
+        ((e.metaKey || e.ctrlKey) && e.shiftKey && e.code === "KeyZ")
+        || ((e.ctrlKey || e.metaKey) && e.code === "KeyY")
+      ) {
+        e.preventDefault();
+        dispatch({ type: "REDO" });
+        return;
+      }
       const currentSlideStart = (() => {
         const targets = state.sents.filter((s) => s.slide_idx === state.curSl);
         if (!targets.length) return 0;
@@ -208,7 +221,7 @@ export default function App() {
         <ResizeHandle onMouseDown={startResizeLeft} resizing={resizingLeft} />
 
         {/* 中央パネル（残り幅を占有） */}
-        <CenterPanel state={state} dispatch={dispatch} />
+        <CenterPanel state={state} dispatch={dispatch} addToast={addToast} />
 
         {/* 右ハンドル */}
         <ResizeHandle onMouseDown={startResizeRight} resizing={resizingRight} />

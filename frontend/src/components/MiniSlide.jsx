@@ -14,6 +14,7 @@ export default function MiniSlide({ hl, dispatch }) {
   const onMoveStart = (e) => {
     if (e.target.dataset.rh) return;
     e.preventDefault(); e.stopPropagation();
+    dispatch({ type: "PUSH_HISTORY" });
     const wr = ref.current.getBoundingClientRect();
     const ox = e.clientX, oy = e.clientY, ox0 = hl.x, oy0 = hl.y;
     const mv = (ev) =>
@@ -28,6 +29,7 @@ export default function MiniSlide({ hl, dispatch }) {
 
   const onResizeStart = (e) => {
     e.preventDefault(); e.stopPropagation();
+    dispatch({ type: "PUSH_HISTORY" });
     const wr = ref.current.getBoundingClientRect();
     const ox = e.clientX, oy = e.clientY, ow = hl.w, oh = hl.h;
     const mv = (ev) =>

@@ -16,6 +16,7 @@ export default function HlEditor({ sid, hl, dispatch, drawMode, drawSentId }) {
   const isDraw  = drawMode && drawSentId === sid;
 
   const setKind = (k) => {
+    dispatch({ type: "PUSH_HISTORY" });
     if (k === "none") { dispatch({ type: "RM_HL_SID", v: sid }); return; }
     if (hl)           dispatch({ type: "SET_HL_KIND", id: hl.id, kind: k });
     // HL未設定の場合は「領域を描く」を促す（トースト通知はApp層で行う）
@@ -99,7 +100,7 @@ export default function HlEditor({ sid, hl, dispatch, drawMode, drawSentId }) {
                 }}>
                   ✏ {isDraw ? "描画中…" : "再描画"}
                 </button>
-                <button onClick={() => dispatch({ type: "RM_HL_SID", v: sid })} style={{ padding: "4px 9px", border: "1px solid rgba(224,91,91,.2)", borderRadius: 4, background: "var(--rdd)", color: "var(--rd)", fontSize: 10 }}>
+                <button onClick={() => { dispatch({ type: "PUSH_HISTORY" }); dispatch({ type: "RM_HL_SID", v: sid }); }} style={{ padding: "4px 9px", border: "1px solid rgba(224,91,91,.2)", borderRadius: 4, background: "var(--rdd)", color: "var(--rd)", fontSize: 10 }}>
                   🗑 HL削除
                 </button>
               </div>

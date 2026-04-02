@@ -46,6 +46,7 @@ export default function HlBox({ hl, isSel, isActive, isPlaying, wrapRef, dispatc
   const onMoveStart = (e) => {
     if (isPlaying || e.target.dataset.rh) return;
     e.stopPropagation();
+    dispatch({ type: "PUSH_HISTORY" });
     dispatch({ type: "SEL_HL", v: hl.id });
     const wr = wrapRef.current.getBoundingClientRect();
     const ox = e.clientX, oy = e.clientY, ox0 = hl.x, oy0 = hl.y;
@@ -62,6 +63,7 @@ export default function HlBox({ hl, isSel, isActive, isPlaying, wrapRef, dispatc
   const onResizeStart = (e, dir) => {
     if (isPlaying) return;
     e.preventDefault(); e.stopPropagation();
+    dispatch({ type: "PUSH_HISTORY" });
     const wr = wrapRef.current.getBoundingClientRect();
     const ox = e.clientX, oy = e.clientY;
     const orig = { x: hl.x, y: hl.y, w: hl.w, h: hl.h };

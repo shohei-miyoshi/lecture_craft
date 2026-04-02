@@ -46,10 +46,13 @@ export const INITIAL_STATE = {
   // 操作ログ
   opLogs:    [],
   studyEvents: [],
+  historyPast: [],
+  historyFuture: [],
 };
 
 const MAX_OP_LOGS = 300;
 const MAX_STUDY_EVENTS = 2000;
+const MAX_HISTORY = 80;
 
 function makeLog(message, meta = {}) {
   return {
@@ -139,8 +142,73 @@ function appendStudyEvent(events, event) {
   return next.slice(-MAX_STUDY_EVENTS);
 }
 
+function snapshotHistoryState(state) {
+  return clonePlain({
+    slides: state.slides,
+    sents: state.sents,
+    hls: state.hls,
+    totDur: state.totDur,
+    generated: state.generated,
+    genRef: state.genRef,
+    sessionId: state.sessionId,
+    baseline: state.baseline,
+    curSl: state.curSl,
+    selSent: state.selSent,
+    selHl: state.selHl,
+    appMode: state.appMode,
+    detail: state.detail,
+    level: state.level,
+    prevMode: state.prevMode,
+    status: state.status,
+    statusMsg: state.statusMsg,
+    progress: state.progress,
+    showProg: state.showProg,
+    drawMode: state.drawMode,
+    drawSentId: state.drawSentId,
+    curT: state.curT,
+    playing: state.playing,
+    playSpeed: state.playSpeed,
+    seekSignal: state.seekSignal,
+    opLogs: state.opLogs,
+    studyEvents: state.studyEvents,
+  });
+}
+
+function restoreHistoryState(state, snapshot, past, future) {
+  return {
+    ...state,
+    ...clonePlain(snapshot),
+    historyPast: past,
+    historyFuture: future,
+  };
+}
+
 export function reducer(state, action) {
   switch (action.type) {
+    case "PUSH_HISTORY": {
+      const past = [...state.historyPast, snapshotHistoryState(state)].slice(-MAX_HISTORY);
+      return {
+        ...state,
+        historyPast: past,
+        historyFuture: [],
+      };
+    }
+
+    case "UNDO": {
+      if (!state.historyPast.length) return state;
+      const snapshot = state.historyPast[state.historyPast.length - 1];
+      const past = state.historyPast.slice(0, -1);
+      const future = [snapshotHistoryState(state), ...state.historyFuture].slice(0, MAX_HISTORY);
+      return restoreHistoryState(state, snapshot, past, future);
+    }
+
+    case "REDO": {
+      if (!state.historyFuture.length) return state;
+      const snapshot = state.historyFuture[0];
+      const future = state.historyFuture.slice(1);
+      const past = [...state.historyPast, snapshotHistoryState(state)].slice(-MAX_HISTORY);
+      return restoreHistoryState(state, snapshot, past, future);
+    }
 
     // ── データロード（生成・インポート共通） ──
     case "LOAD": {
@@ -170,6 +238,8 @@ export function reducer(state, action) {
         prevMode,
         sessionId,
         baseline,
+        historyPast: [],
+        historyFuture: [],
         opLogs:    appendLog(
           state.opLogs,
           `講義データを読み込みました（slides=${(action.d.slides ?? []).length}, sentences=${sents.length}, mode=${appMode}）`,
@@ -489,6 +559,8 @@ export function reducer(state, action) {
       return {
         ...INITIAL_STATE,
         opLogs: appendLog(state.opLogs, "講義データをリセットしました", { type: "reset" }),
+        historyPast: [],
+        historyFuture: [],
       };
     default:      return state;
   }

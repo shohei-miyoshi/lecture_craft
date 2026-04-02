@@ -28,7 +28,7 @@ export default function RightPanel({ state, dispatch, addToast, requestConfirm, 
   });
 
   return (
-    <aside style={{ display: "flex", flexDirection: "column", overflow: "hidden", flexShrink: 0, background: "var(--sur)", borderLeft: "1px solid var(--bd)" }}>
+    <aside style={{ display: "flex", flexDirection: "column", overflow: "hidden", flexShrink: 0, background: "var(--sur)", borderLeft: "1px solid var(--bd)", minHeight: 0 }}>
 
       {/* ── タブ ── */}
       <div style={{ display: "flex", alignItems: "flex-end", borderBottom: "1px solid var(--bd)", background: "var(--sur)", flexShrink: 0, paddingLeft: 4 }}>
@@ -44,18 +44,29 @@ export default function RightPanel({ state, dispatch, addToast, requestConfirm, 
               <span style={{ fontFamily: "var(--ff)", fontSize: 12, fontWeight: 700 }}>
                 {isAudio ? "台本編集" : "台本 ＋ ハイライト編集"}
               </span>
-              <button onClick={() => dispatch({ type: "ADD_SENT" })} style={{ display: "inline-flex", alignItems: "center", gap: 3, padding: "3px 6px", border: "1px solid var(--bd2)", borderRadius: "var(--r)", background: "var(--s2)", color: "var(--tp)", fontSize: 10 }}>
-                ＋ 文追加
-              </button>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <button onClick={() => dispatch({ type: "UNDO" })} style={{ display: "inline-flex", alignItems: "center", gap: 3, padding: "3px 6px", border: "1px solid var(--bd2)", borderRadius: "var(--r)", background: "var(--s2)", color: "var(--tp)", fontSize: 10 }}>
+                  ↶ 戻る
+                </button>
+                <button onClick={() => dispatch({ type: "REDO" })} style={{ display: "inline-flex", alignItems: "center", gap: 3, padding: "3px 6px", border: "1px solid var(--bd2)", borderRadius: "var(--r)", background: "var(--s2)", color: "var(--tp)", fontSize: 10 }}>
+                  ↷ 進む
+                </button>
+                <button
+                  onClick={() => { dispatch({ type: "PUSH_HISTORY" }); dispatch({ type: "ADD_SENT" }); }}
+                  style={{ display: "inline-flex", alignItems: "center", gap: 3, padding: "3px 6px", border: "1px solid var(--bd2)", borderRadius: "var(--r)", background: "var(--s2)", color: "var(--tp)", fontSize: 10 }}
+                >
+                  ＋ 文追加
+                </button>
+              </div>
             </div>
             <div style={{ fontSize: 10, color: "var(--tm)", lineHeight: 1.45 }}>
               {isAudio
                 ? "文クリックで選択 → テキスト直接編集 or ✨AI修正 ／ ⏱ タイミング編集"
-                : "文クリックで選択 → テキスト直接編集 or ✨AI修正 ／ バッジでHL設定"}
+                : "文クリックで選択 → テキスト直接編集 or ✨AI修正 ／ 左帯とボタンでHL設定"}
             </div>
           </div>
 
-          <div style={{ flex: 1, overflowY: "auto" }}>
+          <div style={{ flex: 1, minHeight: 0, overflowY: "auto", scrollbarGutter: "stable", overscrollBehavior: "contain" }}>
             {curSents.length === 0 ? (
               <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 28, color: "var(--tm)", fontSize: 11, gap: 5, textAlign: "center" }}>
                 <div style={{ fontSize: 24, opacity: 0.4 }}>📝</div>
