@@ -213,15 +213,48 @@ export default function App() {
   };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden", background: "var(--bg)", cursor: resizingLeft || resizingRight ? "col-resize" : "default" }}>
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        height: "100vh",
+        overflow: "hidden",
+        background:
+          "radial-gradient(circle at top left, rgba(91,141,239,.12), transparent 24%), radial-gradient(circle at bottom right, rgba(110,193,255,.08), transparent 18%), var(--bg)",
+        cursor: resizingLeft || resizingRight ? "col-resize" : "default",
+      }}
+    >
 
       {/* ── ヘッダー ── */}
-      <header style={{ height: 46, display: "flex", alignItems: "center", padding: "0 16px", gap: 10, background: "var(--sur)", borderBottom: "1px solid var(--bd)", flexShrink: 0 }}>
-        <div style={{ fontFamily: "var(--ff)", fontSize: 15, fontWeight: 800, display: "flex", alignItems: "center", gap: 6 }}>
-          <div style={{ width: 22, height: 22, background: "var(--ac)", borderRadius: 5, display: "grid", placeItems: "center", fontSize: 11 }}>▶</div>
-          Lecture<span style={{ color: "var(--ac)" }}>Craft</span>
+      <header
+        style={{
+          height: 58,
+          display: "flex",
+          alignItems: "center",
+          padding: "0 18px",
+          gap: 12,
+          background: "linear-gradient(180deg, rgba(19,21,26,.96), rgba(19,21,26,.82))",
+          borderBottom: "1px solid rgba(255,255,255,.05)",
+          flexShrink: 0,
+          position: "relative",
+          overflow: "hidden",
+        }}
+      >
+        <div style={{ position: "absolute", inset: 0, background: "linear-gradient(90deg, rgba(91,141,239,.14), transparent 20%, transparent 78%, rgba(110,193,255,.08))", pointerEvents: "none" }} />
+        <div style={{ fontFamily: "var(--ff)", fontSize: 15, fontWeight: 800, display: "flex", alignItems: "center", gap: 8, position: "relative", zIndex: 1 }}>
+          <div style={{ width: 24, height: 24, background: "linear-gradient(135deg, var(--ac), #7aa7ff)", borderRadius: 7, display: "grid", placeItems: "center", fontSize: 11, boxShadow: "0 10px 24px rgba(91,141,239,.28)" }}>▶</div>
+          <div>
+            <div style={{ lineHeight: 1 }}>Lecture<span style={{ color: "var(--ac)" }}>Craft</span></div>
+            <div style={{ fontFamily: "var(--fm)", fontSize: 8, color: "var(--tm)", marginTop: 2 }}>
+              {view === "admin"
+                ? "ADMIN OVERVIEW"
+                : studioScreen === "home"
+                  ? "PROJECT INDEX"
+                  : state.projectMeta?.name ?? "EDITOR"}
+            </div>
+          </div>
         </div>
-        <div style={{ width: 1, height: 18, background: "var(--bd)" }} />
+        <div style={{ width: 1, height: 24, background: "linear-gradient(180deg, transparent, var(--bd2), transparent)", position: "relative", zIndex: 1 }} />
         <div style={{ display: "inline-flex", padding: 3, borderRadius: 999, background: "var(--s2)", border: "1px solid var(--bd)" }}>
           {[
             ["studio", "編集"],
@@ -274,7 +307,23 @@ export default function App() {
           requestConfirm={requestConfirm}
         />
       ) : (
-      <div style={{ display: "flex", flex: 1, overflow: "hidden", minHeight: 0 }}>
+      <div style={{ flex: 1, minHeight: 0, padding: 12, overflow: "hidden" }}>
+        <div
+          style={{
+            position: "relative",
+            display: "flex",
+            flex: 1,
+            height: "100%",
+            overflow: "hidden",
+            minHeight: 0,
+            border: "1px solid rgba(255,255,255,.05)",
+            background: "linear-gradient(180deg, rgba(19,21,26,.92), rgba(19,21,26,.82))",
+            boxShadow: "0 24px 60px rgba(0,0,0,.22)",
+          }}
+        >
+          <div style={{ position: "absolute", top: 0, left: 0, width: 132, height: 18, background: "linear-gradient(90deg, var(--ac), transparent)", opacity: 0.55, pointerEvents: "none" }} />
+          <div style={{ position: "absolute", bottom: 0, right: 0, width: 140, height: 18, background: "linear-gradient(270deg, rgba(110,193,255,.32), transparent)", opacity: 0.35, pointerEvents: "none" }} />
+          <div style={{ position: "absolute", inset: 0, background: "linear-gradient(90deg, rgba(255,255,255,.02) 1px, transparent 1px), linear-gradient(180deg, rgba(255,255,255,.015) 1px, transparent 1px)", backgroundSize: "32px 32px", opacity: 0.12, pointerEvents: "none" }} />
 
         {/* 左パネル（幅可変） */}
         <div style={{ width: layout.leftWidth, minWidth: layout.leftWidth, maxWidth: layout.leftWidth, overflow: "hidden", flexShrink: 0 }}>
@@ -310,6 +359,7 @@ export default function App() {
             rightContent={<ExportPanel state={state} dispatch={dispatch} addToast={addToast} />}
           />
         </div>
+      </div>
       </div>
       )}
 

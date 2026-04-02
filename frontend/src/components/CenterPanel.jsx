@@ -15,23 +15,35 @@ export default function CenterPanel({ state, dispatch, addToast, requestConfirm 
   const isHl    = state.appMode === "hl";
 
   return (
-    <main style={{ flex: 1, display: "flex", flexDirection: "column", background: "var(--bg)", minWidth: 0, overflow: "hidden" }}>
+    <main style={{ flex: 1, display: "flex", flexDirection: "column", background: "transparent", minWidth: 0, overflow: "hidden", position: "relative" }}>
 
       {/* ── ツールバー ── */}
-      <div style={{ height: 38, display: "flex", alignItems: "center", gap: 6, padding: "0 12px", background: "var(--sur)", borderBottom: "1px solid var(--bd)", flexShrink: 0 }}>
-        <span style={{ fontFamily: "var(--ff)", fontSize: 9, fontWeight: 700, letterSpacing: "1.2px", textTransform: "uppercase", color: "var(--tm)" }}>Preview</span>
+      <div
+        style={{
+          minHeight: 46,
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          padding: "8px 14px",
+          background: "linear-gradient(180deg, rgba(19,21,26,.88), rgba(19,21,26,.74))",
+          borderBottom: "1px solid rgba(255,255,255,.04)",
+          flexShrink: 0,
+          flexWrap: "wrap",
+        }}
+      >
+        <span style={{ fontFamily: "var(--ff)", fontSize: 9, fontWeight: 700, letterSpacing: "1.4px", textTransform: "uppercase", color: "var(--tm)", padding: "4px 8px", background: "rgba(255,255,255,.03)", borderLeft: "2px solid var(--ac)" }}>Preview</span>
 
         {isAudio ? (
-          <span style={{ fontSize: 10, color: "var(--am)", background: "var(--amd)", border: "1px solid rgba(232,169,75,.3)", padding: "2px 8px", borderRadius: 20, marginLeft: 4 }}>
+          <span style={{ fontSize: 10, color: "var(--am)", background: "var(--amd)", border: "1px solid rgba(232,169,75,.3)", padding: "4px 8px", marginLeft: 4 }}>
             🔊 音声のみ
           </span>
         ) : (
-          <span style={{ fontFamily: "var(--fm)", fontSize: 9, color: "var(--tm)", marginLeft: 4 }}>
+          <span style={{ fontFamily: "var(--fm)", fontSize: 9, color: "var(--tm)", marginLeft: 4, padding: "4px 8px", background: "rgba(255,255,255,.03)" }}>
             {state.slides.length ? `${state.curSl + 1} / ${state.slides.length}` : "— / —"}
           </span>
         )}
 
-        <span style={{ marginLeft: 10, fontSize: 10, color: "var(--tm)", whiteSpace: "nowrap" }}>
+        <span style={{ marginLeft: 10, fontSize: 10, color: "var(--tm)", whiteSpace: "nowrap", padding: "4px 10px", background: "rgba(255,255,255,.025)" }}>
           <kbd style={{ background: "var(--s3)", padding: "1px 5px", borderRadius: 3, fontSize: 9 }}>Enter</kbd> 次
           {" / "}
           <kbd style={{ background: "var(--s3)", padding: "1px 5px", borderRadius: 3, fontSize: 9 }}>Backspace</kbd> 前
@@ -77,7 +89,25 @@ export default function CenterPanel({ state, dispatch, addToast, requestConfirm 
       {isAudio ? (
         <AudioView state={state} />
       ) : (
-        <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: 14, overflow: "hidden" }}>
+        <div
+          style={{
+            flex: 1,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 18,
+            overflow: "hidden",
+            position: "relative",
+            background:
+              "linear-gradient(180deg, rgba(255,255,255,.015), transparent 16%), radial-gradient(circle at 50% 20%, rgba(91,141,239,.08), transparent 36%)",
+          }}
+        >
+          <div style={{ position: "absolute", top: 14, left: 18, padding: "6px 10px", background: "rgba(19,21,26,.88)", borderLeft: "2px solid var(--ac)", fontSize: 10, color: "var(--ts)", zIndex: 2 }}>
+            入力スライドの比率を維持して表示
+          </div>
+          <div style={{ position: "absolute", right: 18, bottom: 16, fontFamily: "var(--fm)", fontSize: 9, color: "var(--tm)", zIndex: 2 }}>
+            wheel: ページ切替 / ctrl+wheel: 拡大縮小
+          </div>
           <SlideCanvas state={state} dispatch={dispatch} addToast={addToast} requestConfirm={requestConfirm} />
         </div>
       )}

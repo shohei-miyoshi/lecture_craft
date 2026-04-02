@@ -30,10 +30,11 @@ export default function RightPanel({ state, dispatch, addToast, requestConfirm, 
   });
 
   return (
-    <aside style={{ display: "flex", flexDirection: "column", overflow: "hidden", flexShrink: 0, background: "var(--sur)", borderLeft: "1px solid var(--bd)", minHeight: 0 }}>
+    <aside style={{ display: "flex", flexDirection: "column", overflow: "hidden", flexShrink: 0, background: "linear-gradient(180deg, rgba(19,21,26,.92), rgba(19,21,26,.82))", borderLeft: "1px solid rgba(255,255,255,.05)", minHeight: 0, position: "relative" }}>
+      <div style={{ position: "absolute", top: 0, right: 0, width: 90, height: 16, background: "linear-gradient(270deg, rgba(110,193,255,.22), transparent)", pointerEvents: "none" }} />
 
       {/* ── タブ ── */}
-      <div style={{ display: "flex", alignItems: "flex-end", borderBottom: "1px solid var(--bd)", background: "var(--sur)", flexShrink: 0, paddingLeft: 4 }}>
+      <div style={{ display: "flex", alignItems: "flex-end", borderBottom: "1px solid rgba(255,255,255,.05)", background: "transparent", flexShrink: 0, padding: "6px 8px 0 8px", gap: 4 }}>
         <button onClick={() => setTab("editor")} style={tabSty(tab === "editor")}>エディタ</button>
         <button onClick={() => setTab("export")} style={tabSty(tab === "export")}>書き出し</button>
       </div>
@@ -41,7 +42,7 @@ export default function RightPanel({ state, dispatch, addToast, requestConfirm, 
       {/* ── エディタタブ ── */}
       {tab === "editor" && (
         <>
-          <div style={{ padding: "10px 12px 8px", borderBottom: "1px solid var(--bd)", flexShrink: 0 }}>
+          <div style={{ padding: "12px 14px 10px", borderBottom: "1px solid rgba(255,255,255,.05)", flexShrink: 0, background: "linear-gradient(180deg, rgba(255,255,255,.02), transparent)" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 3 }}>
               <span style={{ fontFamily: "var(--ff)", fontSize: 12, fontWeight: 700 }}>
                 {isAudio ? "台本編集" : "台本 ＋ ハイライト編集"}
@@ -62,7 +63,7 @@ export default function RightPanel({ state, dispatch, addToast, requestConfirm, 
             </div>
           </div>
 
-          <div style={{ flex: 1, minHeight: 0, overflowY: "auto", scrollbarGutter: "stable", overscrollBehavior: "contain" }}>
+          <div style={{ flex: 1, minHeight: 0, overflowY: "auto", scrollbarGutter: "stable", overscrollBehavior: "contain", background: "linear-gradient(180deg, rgba(255,255,255,.01), transparent 14%)" }}>
             {curSents.length === 0 ? (
               <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 28, color: "var(--tm)", fontSize: 11, gap: 5, textAlign: "center" }}>
                 <div style={{ fontSize: 24, opacity: 0.4 }}>📝</div>
