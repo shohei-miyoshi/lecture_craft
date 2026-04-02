@@ -11,7 +11,11 @@ from openai import OpenAI
 from .paths import ProjectPaths
 from .style_axes import resolve_level_detail
 from .deck_scan import collect_slide_images
-from .gpt_utils import encode_image
+from .gpt_utils import (
+    build_responses_system_message,
+    build_responses_user_message,
+    call_responses_text,
+)
 from . import config
 
 
@@ -155,14 +159,13 @@ def generate_lecture_scripts(
     level_desc, detail_desc = resolve_level_detail(level, detail)
 
     # System メッセージ（共通・文字列でOK）
-    system_message = {
-        "role": "system",
-        "content": (
+    system_message = build_responses_system_message(
+        (
             "あなたは日本語で講義台本を作成する優れたプレゼンターです。"
             "講義資料画像に音声を吹き込みますので，資料に書かれている内容に沿ってナレーションを作成してください。"
             "講義資料に書かれているテキストを必要に応じて利用しつつ，教育的に効果的な講義台本を作成してください。"
-        ),
-    }
+        )
+    )
 
     # 4) 保存先準備（lecture_texts フォルダ）
     text_output_dir.mkdir(parents=True, exist_ok=True)
@@ -193,28 +196,16 @@ def generate_lecture_scripts(
             detail_desc=detail_desc,
         )
 
-        # 画像を base64 → image_url コンテンツに変換
-        img_b64 = encode_image(img_path)
-        user_content = [
-            {"type": "text", "text": text_content},
-            {
-                "type": "image_url",
-                "image_url": {"url": f"data:image/png;base64,{img_b64}"},
-            },
-        ]
-
-        # GPT 呼び出し（chat.completions を直接使用）
+        # GPT 呼び出し（画像付きは Responses API に統一）
         try:
-            resp = client.chat.completions.create(
-                model=config.API_MODEL_EXPLANATION,
+            _resp, result = call_responses_text(
+                client,
+                modelname=config.API_MODEL_EXPLANATION,
                 messages=[
                     system_message,
-                    {"role": "user", "content": user_content},
+                    build_responses_user_message(text_content, [img_path]),
                 ],
-                temperature=config.API_MODEL_EXPLANATION_TEMPERATURE,
-                max_completion_tokens=4000,
             )
-            result: str = resp.choices[0].message.content or ""
         except Exception as e:
             raise RuntimeError(f"モデル応答の取得に失敗しました（slide {slide_no:03d}）: {e}")
 

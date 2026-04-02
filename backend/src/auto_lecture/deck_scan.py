@@ -8,7 +8,11 @@ from typing import List
 from openai import OpenAI
 
 from .paths import ProjectPaths
-from .gpt_utils import ask_gpt, create_user_message
+from .gpt_utils import (
+    build_responses_system_message,
+    build_responses_user_message,
+    call_responses_text,
+)
 from .style_axes import resolve_level_detail
 from . import config
 
@@ -52,16 +56,15 @@ def run_deck_scan(
     print(f"LEVEL={level} ({level_desc}) / DETAIL={detail} ({detail_desc})")
 
     # --- 3) Systemメッセージ & プロンプト ---
-    scan_system_message = {
-        "role": "system",
-        "content": f"""あなたは日本語で大学講義資料を分析する教育工学の専門家です。
+    scan_system_message = build_responses_system_message(
+        f"""あなたは日本語で大学講義資料を分析する教育工学の専門家です。
 講義スライド全体を俯瞰し，スライドグループ・講義の構造・流れ・重要用語・難所を整理します。
 想定する説明スタイルは次の通りです：
 
 レベル軸（Level Axis）: {level_desc}
 詳細度軸（Detail Axis）: {detail_desc}
 """
-    }
+    )
 
     scan_text = f"""
 [Style Axes]
@@ -124,21 +127,15 @@ def run_deck_scan(
 
     scan_messages = [
         scan_system_message,
-        create_user_message(scan_text, scan_img_paths),
+        build_responses_user_message(scan_text, scan_img_paths),
     ]
 
     # --- 4) GPT 呼び出し ---
-    scan_response = ask_gpt(
+    _scan_response, scan_result = call_responses_text(
         client,
-        scan_messages,
         modelname=config.API_MODEL_DECK_SCAN,
-        max_tokens=6000,
+        messages=scan_messages,
     )
-
-    try:
-        scan_result = scan_response[0]["response"].choices[0].message.content.strip()
-    except Exception as e:
-        raise RuntimeError(f"モデル応答の形式が想定と異なります（全体スキャン）: {e}")
 
     # --- 5) 保存 ---
     all_page_scan_output_dir.mkdir(parents=True, exist_ok=True)

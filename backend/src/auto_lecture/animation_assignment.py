@@ -15,6 +15,7 @@ from openai import OpenAI
 
 from .paths import ProjectPaths
 from .config import API_MODEL_ANIMATION
+from .gpt_utils import build_responses_system_message, call_responses_text
 
 
 # ====== Style Catalog ======
@@ -185,7 +186,7 @@ def build_system_message() -> str:
         "必ず守ること："
         "- 「1つの文につきアニメは最大1つ」（animate は各文で null か1つ）。"
         "- 不要なら animate=null。"
-        "- スタイルは次の候補のみ: {style_hints}（これ以外を出力してはいけない）。"
+        f"- スタイルは次の候補のみ: {style_hints}（これ以外を出力してはいけない）。"
         "- 出力は純粋JSONのみ。余計な文章は禁止。"
         "- JSON構造は指定スキーマに厳密一致（timelineが主、再生順が一目で分かる）。"
         "- スライドの表紙に対してアニメーションは必要ない。"
@@ -199,7 +200,7 @@ def build_user_message(
     region_imgs: List[Dict[str, str]],
     script_full: str,
     sentences: List[str],
-) -> List[Dict[str, Any]]:
+) -> Dict[str, Any]:
     """
     旧スキーマ（sentences）を維持したまま、判断材料を増やすプロンプト。
 
@@ -277,8 +278,8 @@ def build_user_message(
 
     # content パーツ：スライド画像 + region画像群を「画像」として添付
     content: List[Dict[str, Any]] = [
-        {"type": "text", "text": user_text},
-        {"type": "image_url", "image_url": {"url": slide_img_url}},
+        {"type": "input_text", "text": user_text},
+        {"type": "input_image", "image_url": slide_img_url},
     ]
 
     # region画像を画像パーツで追加（必要なら簡単なラベルテキストも添付）
@@ -289,10 +290,10 @@ def build_user_message(
             # 画像化に失敗しても落とさない（ただしこのregionは添付されない）
             continue
 
-        content.append({"type": "text", "text": f"[region_image] region_id={r['region_id']} type={r['type']}"})
-        content.append({"type": "image_url", "image_url": {"url": region_url}})
+        content.append({"type": "input_text", "text": f"[region_image] region_id={r['region_id']} type={r['type']}"})
+        content.append({"type": "input_image", "image_url": region_url})
 
-    return [{"role": "user", "content": content}]
+    return {"role": "user", "content": content}
 
 
 def save_mapping_outputs(paths: ProjectPaths, slide_str: str, mapping: Dict[str, Any]) -> None:
@@ -334,7 +335,7 @@ def run_animation_assignment(client: OpenAI, paths: ProjectPaths, explanations: 
       explanations（スライドごとの講義全文）と LP_output から
       slide_XXX_mappings.json を生成する。
     """
-    system_msg = {"role": "system", "content": build_system_message()}
+    system_msg = build_responses_system_message(build_system_message())
 
     lp_input_dir = resolve_lp_input_dir(paths)
     slide_imgs = sorted([p for p in paths.img_root.glob("*.png")])
@@ -367,13 +368,14 @@ def run_animation_assignment(client: OpenAI, paths: ProjectPaths, explanations: 
             sentences=sentences,
         )
 
-        messages = [system_msg] + user_msg
+        messages = [system_msg, user_msg]
 
-        resp = client.chat.completions.create(
-            model=API_MODEL_ANIMATION,
+        _resp, out_text = call_responses_text(
+            client,
+            modelname=API_MODEL_ANIMATION,
             messages=messages,
         )
-        out_text = resp.choices[0].message.content or "{}"
+        out_text = out_text or "{}"
 
         try:
             mapping = extract_json(out_text)
