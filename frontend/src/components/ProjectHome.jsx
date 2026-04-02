@@ -163,8 +163,58 @@ export default function ProjectHome({
                 研究用の編集ログや書き出しフローも、この入口からまとめて扱えます。
               </div>
 
-              <div style={{ display: "grid", gridTemplateColumns: "auto minmax(0, 320px)", gap: 14, alignItems: "stretch", marginTop: 18 }}>
-                <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-start" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 420px) auto", gap: 16, alignItems: "end", marginTop: 22 }}>
+                <div
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    setDraggingPdf(true);
+                  }}
+                  onDragLeave={() => setDraggingPdf(false)}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setDraggingPdf(false);
+                    handlePendingPdf(e.dataTransfer.files?.[0] ?? null);
+                  }}
+                  onClick={() => fileInputRef.current?.click()}
+                  style={{
+                    position: "relative",
+                    padding: "18px 18px 16px",
+                    border: `1px dashed ${draggingPdf ? "rgba(110,193,255,.52)" : "rgba(110,193,255,.26)"}`,
+                    background: draggingPdf
+                      ? "linear-gradient(135deg, rgba(91,141,239,.14), rgba(255,255,255,.04))"
+                      : "linear-gradient(135deg, rgba(255,255,255,.03), rgba(255,255,255,.015) 60%, transparent)",
+                    cursor: "pointer",
+                    overflow: "hidden",
+                  }}
+                >
+                  <div style={{ position: "absolute", left: 0, top: 0, width: 110, height: 4, background: "var(--ac)" }} />
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".pdf,application/pdf"
+                    onChange={(e) => handlePendingPdf(e.target.files?.[0] ?? null)}
+                    style={{ display: "none" }}
+                  />
+                  <div style={{ fontSize: 10, letterSpacing: "1.4px", textTransform: "uppercase", color: "var(--tm)", marginBottom: 8 }}>
+                    講義スライドから開始
+                  </div>
+                  <div style={{ fontFamily: "var(--ff)", fontSize: 20, lineHeight: 1.15, marginBottom: 8 }}>
+                    PDF を選んで新規作成
+                  </div>
+                  <div style={{ fontSize: 11, color: "var(--ts)", lineHeight: 1.7, marginBottom: 12 }}>
+                    クリックまたはドロップで講義スライド PDF を選択し、そのまま編集画面へ進めます。
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                    <div style={{ padding: "4px 8px", background: "rgba(255,255,255,.04)", borderLeft: "2px solid rgba(110,193,255,.3)", fontSize: 10, color: "var(--tm)" }}>
+                      PDF / max 50MB
+                    </div>
+                    <div style={{ fontSize: 11, color: pendingPdf ? "var(--tp)" : "var(--tm)", fontFamily: pendingPdf ? "var(--fm)" : "inherit" }}>
+                      {pendingPdf ? pendingPdf.name : "まだ PDF は選択されていません"}
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", justifyContent: "flex-start" }}>
                   <button
                     onClick={startProjectWithPdf}
                     disabled={!pendingPdf}
@@ -197,54 +247,14 @@ export default function ProjectHome({
                   </button>
                   <div
                     style={{
-                      padding: "11px 14px",
-                      background: "linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.02))",
+                      padding: "10px 12px",
+                      background: "linear-gradient(90deg, rgba(255,255,255,.04), rgba(255,255,255,.015))",
                       color: "var(--ts)",
                       fontSize: 11,
-                      clipPath: "polygon(0 0, 100% 0, 96% 100%, 0 100%)",
+                      borderTop: "1px solid rgba(110,193,255,.18)",
                     }}
                   >
-                    ローカル保存件数: <span style={{ color: "var(--tp)", fontFamily: "var(--fm)" }}>{projects.length}</span>
-                  </div>
-                </div>
-                <div
-                  onDragOver={(e) => {
-                    e.preventDefault();
-                    setDraggingPdf(true);
-                  }}
-                  onDragLeave={() => setDraggingPdf(false)}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    setDraggingPdf(false);
-                    handlePendingPdf(e.dataTransfer.files?.[0] ?? null);
-                  }}
-                  onClick={() => fileInputRef.current?.click()}
-                  style={{
-                    position: "relative",
-                    padding: "16px 16px 14px",
-                    border: `1px dashed ${draggingPdf ? "rgba(110,193,255,.5)" : "rgba(110,193,255,.24)"}`,
-                    background: draggingPdf ? "rgba(91,141,239,.12)" : "rgba(255,255,255,.03)",
-                    cursor: "pointer",
-                  }}
-                >
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept=".pdf,application/pdf"
-                    onChange={(e) => handlePendingPdf(e.target.files?.[0] ?? null)}
-                    style={{ display: "none" }}
-                  />
-                  <div style={{ fontSize: 10, letterSpacing: "1.4px", textTransform: "uppercase", color: "var(--tm)", marginBottom: 7 }}>
-                    講義スライドから開始
-                  </div>
-                  <div style={{ fontFamily: "var(--ff)", fontSize: 18, lineHeight: 1.2, marginBottom: 8 }}>
-                    PDF を選んで新規作成
-                  </div>
-                  <div style={{ fontSize: 11, color: "var(--ts)", lineHeight: 1.7, marginBottom: 10 }}>
-                    クリックまたはドロップで講義スライド PDF を選択し、そのまま編集画面へ進めます。
-                  </div>
-                  <div style={{ fontSize: 11, color: pendingPdf ? "var(--tp)" : "var(--tm)", fontFamily: pendingPdf ? "var(--fm)" : "inherit" }}>
-                    {pendingPdf ? pendingPdf.name : "まだ PDF は選択されていません"}
+                    保存件数 <span style={{ color: "var(--tp)", fontFamily: "var(--fm)" }}>{projects.length}</span>
                   </div>
                 </div>
               </div>
@@ -354,12 +364,22 @@ export default function ProjectHome({
                         borderTop: index === 0 ? "1px solid rgba(91,141,239,.24)" : "1px solid rgba(255,255,255,.05)",
                         borderBottom: "1px solid rgba(255,255,255,.05)",
                         overflow: "hidden",
-                        clipPath: index % 2 === 0
-                          ? "polygon(0 0, 100% 0, 100% 100%, 2% 100%)"
-                          : "polygon(0 0, 98% 0, 100% 100%, 0 100%)",
                       }}
                     >
                       <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 4, background: "linear-gradient(180deg, var(--ac), rgba(110,193,255,.18))" }} />
+                      <div
+                        style={{
+                          position: "absolute",
+                          right: 16,
+                          top: 0,
+                          width: 52,
+                          height: 14,
+                          background: index % 2 === 0
+                            ? "linear-gradient(90deg, rgba(110,193,255,.2), transparent)"
+                            : "linear-gradient(90deg, rgba(91,141,239,.12), transparent)",
+                          pointerEvents: "none",
+                        }}
+                      />
                       <div style={{ display: "grid", gridTemplateColumns: "1.4fr .9fr auto", gap: 16, alignItems: "center" }}>
                         <div>
                           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
@@ -440,9 +460,9 @@ export default function ProjectHome({
               padding: "18px 18px 16px",
               background: "linear-gradient(180deg, rgba(19,21,26,.9), rgba(19,21,26,.76))",
               borderTop: "1px solid rgba(91,141,239,.22)",
-              clipPath: "polygon(0 0, 100% 0, 100% 100%, 8% 100%)",
             }}
           >
+            <div style={{ position: "absolute", right: 14, top: 0, width: 44, height: 3, background: "var(--ac)" }} />
             <div style={{ fontFamily: "var(--ff)", fontSize: 18, marginBottom: 12 }}>作業の流れ</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
               {[
