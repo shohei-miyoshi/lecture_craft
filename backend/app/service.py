@@ -30,7 +30,6 @@ from .cache import (
     build_generate_cache_plan,
     decode_pdf_base64,
     get_named_lock,
-    load_cached_generate_response,
     write_cached_generate_response,
 )
 from .models import ExportRequest, GenerateRequest, ResearchSessionRequest
@@ -104,17 +103,7 @@ def generate_media(
         raise ApiError(400, "INVALID_PDF", str(exc)) from exc
     plan = build_generate_cache_plan(req, pdf_bytes)
 
-    cached = load_cached_generate_response(plan)
-    if cached is not None:
-        report(100, "既存の生成結果キャッシュを利用しました")
-        return attach_generation_ref(cached, plan, cache_hit=True)
-
     with get_named_lock(f"generate:{plan.request_key}"):
-        cached = load_cached_generate_response(plan)
-        if cached is not None:
-            report(100, "既存の生成結果キャッシュを利用しました")
-            return attach_generation_ref(cached, plan, cache_hit=True)
-
         material_name = plan.material_name
         output_root_name = plan.output_root_name
 

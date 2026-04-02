@@ -15,7 +15,6 @@ from .cache import (
     decode_pdf_base64,
     get_named_lock,
     job_snapshot_path,
-    load_cached_generate_response,
 )
 from .models import GenerateRequest
 from .service import ApiError, generate_media
@@ -80,30 +79,13 @@ class JobManager:
             self._started = True
 
     def submit_generate(self, req: GenerateRequest) -> Dict[str, Any]:
+        req = self._ensure_request_token(req)
         try:
             pdf_bytes = decode_pdf_base64(req.pdf_base64)
         except ValueError as exc:
             raise ApiError(400, "INVALID_PDF", str(exc)) from exc
 
         plan = build_generate_cache_plan(req, pdf_bytes)
-        cached = load_cached_generate_response(plan)
-        if cached is not None:
-            record = self._create_job(
-                kind="generate",
-                status="completed",
-                progress=100,
-                message="キャッシュ済みの生成結果を返しました",
-                request_key=plan.request_key,
-                result_path=str(plan.response_cache_path),
-                cache_hit=True,
-                payload={
-                    "mode": req.mode,
-                    "detail": req.detail,
-                    "difficulty": req.difficulty,
-                    "filename": req.filename,
-                },
-            )
-            return self._public_job_payload(record.job_id)
 
         with self._jobs_lock:
             existing_job_id = self._active_generate_jobs.get(plan.request_key)
@@ -399,6 +381,11 @@ class JobManager:
             record.message = "生成を停止しました"
             record.updated_at = record.cancelled_at
         self._persist_job(record)
+
+    def _ensure_request_token(self, req: GenerateRequest) -> GenerateRequest:
+        if req.request_token:
+            return req
+        return req.model_copy(update={"request_token": f"jobreq_{uuid.uuid4().hex}"})
 
 
 _JOB_MANAGER: Optional[JobManager] = None

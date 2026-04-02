@@ -11,6 +11,7 @@ class GenerateRequest(BaseModel):
     detail: Literal["summary", "standard", "detail"]
     difficulty: Literal["intro", "basic", "advanced"]
     mode: Literal["audio", "video", "hl"]
+    request_token: Optional[str] = None
 
 
 class ExportSettings(BaseModel):

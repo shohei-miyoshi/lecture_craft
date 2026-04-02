@@ -50,6 +50,7 @@ def build_generate_cache_plan(req: GenerateRequest, pdf_bytes: bytes) -> Generat
     pdf_hash = sha256_hexdigest(pdf_bytes)
     safe_stem = _safe_stem(Path(req.filename).stem or "lecture")
     material_name = f"{safe_stem}_{pdf_hash[:16]}.pdf"
+    request_token = _safe_stem(req.request_token or "fresh")
 
     fingerprint = {
         "v": PIPELINE_VERSION,
@@ -57,6 +58,7 @@ def build_generate_cache_plan(req: GenerateRequest, pdf_bytes: bytes) -> Generat
         "mode": req.mode,
         "detail": req.detail,
         "difficulty": req.difficulty,
+        "request_token": request_token,
     }
     request_key = sha256_hexdigest(json.dumps(fingerprint, sort_keys=True).encode("utf-8"))[:24]
 
@@ -65,7 +67,7 @@ def build_generate_cache_plan(req: GenerateRequest, pdf_bytes: bytes) -> Generat
         f"{Path(material_name).stem}_{req.detail}_{req.difficulty}_{request_key[:8]}"
     )
     response_cache_path = OUTPUT_ROOT / output_root_name / "api_response.json"
-    audio_shared_cache_dir = AUDIO_SHARED_CACHE_ROOT / Path(material_name).stem
+    audio_shared_cache_dir = AUDIO_SHARED_CACHE_ROOT / f"{Path(material_name).stem}_{request_key[:8]}"
 
     return GenerateCachePlan(
         pdf_hash=pdf_hash,

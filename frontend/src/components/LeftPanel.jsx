@@ -5,6 +5,13 @@ import { toB64, makeDemo } from "../utils/helpers.js";
 
 const JOB_POLL_MS = 2000;
 
+function buildGenerateRequestToken() {
+  if (globalThis.crypto?.randomUUID) {
+    return `ui_${globalThis.crypto.randomUUID()}`;
+  }
+  return `ui_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+}
+
 export default function LeftPanel({ state, dispatch, pdfFile, setPdfFile, addToast, requestConfirm, handleReset, saveProjectNow, isDirty }) {
   const [drag, setDrag] = useState(false);
   const [currentJobId, setCurrentJobId] = useState(null);
@@ -42,6 +49,7 @@ export default function LeftPanel({ state, dispatch, pdfFile, setPdfFile, addToa
           detail:      DETAIL_VALS[state.detail],
           difficulty:  DIFF_VALS[state.level],
           mode:        state.appMode,
+          request_token: buildGenerateRequestToken(),
         }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
