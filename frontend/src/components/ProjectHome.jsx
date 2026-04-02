@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { deleteProject, listProjects, loadProject, updateProjectName } from "../utils/projectStore.js";
 
 function timeText(value) {
@@ -106,9 +106,25 @@ export default function ProjectHome({
   const [pendingPdf, setPendingPdf] = useState(null);
   const [query, setQuery] = useState("");
   const [sortKey, setSortKey] = useState("updated_desc");
+  const [storedProjects, setStoredProjects] = useState([]);
   const fileInputRef = useRef(null);
+  useEffect(() => {
+    let active = true;
+    listProjects()
+      .then((rows) => {
+        if (active) setStoredProjects(rows);
+      })
+      .catch((error) => {
+        console.warn("Failed to list projects:", error);
+        if (active) setStoredProjects([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, [refreshKey]);
+
   const projects = useMemo(() => {
-    const rows = listProjects();
+    const rows = storedProjects;
     const filtered = rows.filter((project) => {
       const q = query.trim().toLowerCase();
       if (!q) return true;
@@ -122,7 +138,7 @@ export default function ProjectHome({
       return String(b.updated_at ?? "").localeCompare(String(a.updated_at ?? ""));
     });
     return sorted;
-  }, [query, refreshKey, sortKey]);
+  }, [query, sortKey, storedProjects]);
   const currentData = currentProject?.data ?? null;
   const currentStatus = currentData?.status ?? null;
   const isGeneratingWorkspace = currentStatus === "proc";
@@ -136,15 +152,15 @@ export default function ProjectHome({
     addToast?.("in", `📑 ${file.name}`);
   };
 
-  const handleDelete = (projectId) => {
-    const project = loadProject(projectId);
+  const handleDelete = async (projectId) => {
+    const project = await loadProject(projectId);
     if (!project) return;
     requestConfirm({
       title: "プロジェクトを削除",
       message: `「${project.name}」をローカル保存から削除しますか？`,
       confirmLabel: "削除",
-      onConfirm: () => {
-        deleteProject(projectId);
+      onConfirm: async () => {
+        await deleteProject(projectId);
         setRefreshKey((v) => v + 1);
       },
     });
@@ -158,10 +174,10 @@ export default function ProjectHome({
       inputLabel: "プロジェクト名",
       inputInitialValue: project.name ?? "",
       inputPlaceholder: "例: パターン認識の講義",
-      onConfirm: (value) => {
+      onConfirm: async (value) => {
         const nextName = String(value ?? "").trim();
         if (!nextName || nextName === project.name) return;
-        updateProjectName(project.id, nextName);
+        await updateProjectName(project.id, nextName);
         setRefreshKey((v) => v + 1);
         addToast?.("ok", `プロジェクト名を「${nextName}」に変更しました`);
       },
@@ -170,6 +186,15 @@ export default function ProjectHome({
 
   const startProjectWithPdf = () => {
     onCreateProject?.(pendingPdf);
+  };
+
+  const handleOpenStoredProject = async (projectId) => {
+    const project = await loadProject(projectId);
+    if (!project) {
+      addToast?.("er", "プロジェクト本体を読み込めませんでした");
+      return;
+    }
+    onOpenProject?.(project);
   };
 
   return (
@@ -396,7 +421,12 @@ export default function ProjectHome({
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                 {projects.map((project, index) => {
-                  const data = project.data ?? {};
+                  const data = {
+                    mode: project.mode,
+                    slides: Array.from({ length: project.slide_count ?? 0 }),
+                    sentences: Array.from({ length: project.sentence_count ?? 0 }),
+                    highlights: Array.from({ length: project.highlight_count ?? 0 }),
+                  };
                   return (
                     <article
                       key={project.id}
@@ -430,7 +460,7 @@ export default function ProjectHome({
                           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
                             <button
                               onDoubleClick={() => handleRename(project)}
-                              onClick={() => onOpenProject(project)}
+                              onClick={() => handleOpenStoredProject(project.id)}
                               style={{ border: "none", background: "none", padding: 0, color: "inherit", textAlign: "left", cursor: "pointer" }}
                             >
                               <span style={{ fontFamily: "var(--ff)", fontSize: 18, lineHeight: 1.1 }}>{project.name}</span>
@@ -477,7 +507,7 @@ export default function ProjectHome({
 
                         <div style={{ display: "flex", gap: 8, justifySelf: "end", flexWrap: "wrap" }}>
                           <button
-                            onClick={() => onOpenProject(project)}
+                            onClick={() => handleOpenStoredProject(project.id)}
                             style={{ ...homeButtonStyle("primary"), padding: "9px 12px", fontSize: 11 }}
                           >
                             開く

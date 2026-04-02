@@ -63,20 +63,27 @@ export default function App() {
         }
       : null;
 
-  const persistProject = (forcedName = null) => {
+  const persistProject = async (forcedName = null) => {
     const name = forcedName ?? state.projectMeta?.name ?? pdfFile?.name?.replace(/\.pdf$/i, "") ?? "新しいプロジェクト";
     const payload = buildProjectPayload(state, name);
-    saveProject(payload);
-    dispatch({ type: "SET", k: "projectMeta", v: payload.data.project_meta });
-    dispatch({ type: "SET", k: "savedFingerprint", v: fingerprintProjectState(state, name) });
-    addToast("ok", `プロジェクト「${name}」を保存しました`);
-    return payload;
+    try {
+      await saveProject(payload);
+      dispatch({ type: "SET", k: "projectMeta", v: payload.data.project_meta });
+      dispatch({ type: "SET", k: "savedFingerprint", v: fingerprintProjectState(state, name) });
+      addToast("ok", `プロジェクト「${name}」を保存しました`);
+      return payload;
+    } catch (error) {
+      console.warn("Project save failed:", error);
+      addToast("er", "プロジェクト保存に失敗しました");
+      throw error;
+    }
   };
 
   const saveCurrentProject = (afterSave = null) => {
     if (state.projectMeta?.name) {
-      persistProject(state.projectMeta.name);
-      afterSave?.();
+      persistProject(state.projectMeta.name)
+        .then(() => afterSave?.())
+        .catch(() => {});
       return;
     }
     const defaultName = pdfFile?.name?.replace(/\.pdf$/i, "") ?? "新しいプロジェクト";
@@ -87,11 +94,15 @@ export default function App() {
       inputLabel: "プロジェクト名",
       inputInitialValue: defaultName,
       inputPlaceholder: "例: パターン認識の講義",
-      onConfirm: (value) => {
+      onConfirm: async (value) => {
         const name = String(value ?? "").trim();
         if (!name) return;
-        persistProject(name);
-        afterSave?.();
+        try {
+          await persistProject(name);
+          afterSave?.();
+        } catch {
+          // toast already shown in persistProject
+        }
       },
     });
   };
