@@ -144,6 +144,8 @@ export default function ProjectHome({
             padding: "30px 30px 26px",
             background: "linear-gradient(135deg, rgba(19,21,26,.92), rgba(19,21,26,.76) 58%, rgba(91,141,239,.08))",
             overflow: "hidden",
+            borderRadius: "30px 18px 26px 20px",
+            border: "1px solid rgba(255,255,255,.04)",
           }}
         >
           <div style={{ position: "absolute", left: 0, top: 0, width: 180, height: 18, background: "linear-gradient(90deg, var(--ac), transparent)" }} />
@@ -153,7 +155,7 @@ export default function ProjectHome({
           <div style={{ display: "grid", gridTemplateColumns: currentData ? "1.2fr .8fr" : "1fr", gap: 22, position: "relative", zIndex: 1 }}>
             <div>
               <div style={{ fontSize: 11, letterSpacing: "1.8px", textTransform: "uppercase", color: "var(--ac)", marginBottom: 10 }}>
-                Project Index
+                プロジェクトホーム
               </div>
               <div style={{ fontFamily: "var(--ff)", fontSize: 38, lineHeight: 1.02, marginBottom: 12 }}>
                 プロジェクト一覧
@@ -185,6 +187,7 @@ export default function ProjectHome({
                       : "linear-gradient(135deg, rgba(255,255,255,.03), rgba(255,255,255,.015) 60%, transparent)",
                     cursor: "pointer",
                     overflow: "hidden",
+                    borderRadius: "24px 14px 20px 16px",
                   }}
                 >
                   <div style={{ position: "absolute", left: 0, top: 0, width: 110, height: 4, background: "var(--ac)" }} />
@@ -228,6 +231,7 @@ export default function ProjectHome({
                       boxShadow: pendingPdf ? "0 14px 30px rgba(91,141,239,.24)" : "none",
                       opacity: pendingPdf ? 1 : 0.55,
                       cursor: pendingPdf ? "pointer" : "not-allowed",
+                      borderRadius: 999,
                     }}
                   >
                     この PDF で作成
@@ -241,6 +245,7 @@ export default function ProjectHome({
                       color: "var(--tp)",
                       fontSize: 12,
                       fontWeight: 700,
+                      borderRadius: 999,
                     }}
                   >
                     空のプロジェクトを作成
@@ -256,10 +261,11 @@ export default function ProjectHome({
                   padding: "18px 18px 14px",
                   background: "linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.01))",
                   borderLeft: "2px solid rgba(91,141,239,.32)",
+                  borderRadius: "24px 16px 20px 18px",
                 }}
               >
                 <div style={{ fontSize: 10, letterSpacing: "1.4px", textTransform: "uppercase", color: "var(--tm)", marginBottom: 8 }}>
-                  Current Workspace
+                  現在の作業
                 </div>
                 <div style={{ fontFamily: "var(--ff)", fontSize: 20, lineHeight: 1.15, marginBottom: 8 }}>
                   {currentProject.name}
@@ -285,6 +291,7 @@ export default function ProjectHome({
                     color: "var(--tp)",
                     fontSize: 12,
                     fontWeight: 700,
+                    borderRadius: 999,
                   }}
                 >
                   いまの編集を続ける
@@ -311,12 +318,27 @@ export default function ProjectHome({
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   placeholder="検索"
-                  style={{ width: 110, padding: "6px 8px", background: "transparent", border: "none", borderBottom: "1px solid var(--bd2)", color: "var(--tp)", fontSize: 11 }}
+                  style={{
+                    width: 120,
+                    padding: "7px 12px",
+                    background: "rgba(255,255,255,.03)",
+                    border: "1px solid rgba(255,255,255,.06)",
+                    borderRadius: 999,
+                    color: "var(--tp)",
+                    fontSize: 11,
+                  }}
                 />
                 <select
                   value={sortKey}
                   onChange={(e) => setSortKey(e.target.value)}
-                  style={{ padding: "5px 4px", background: "transparent", border: "none", borderBottom: "1px solid var(--bd2)", color: "var(--tp)", fontSize: 11 }}
+                  style={{
+                    padding: "7px 12px",
+                    background: "rgba(255,255,255,.03)",
+                    border: "1px solid rgba(255,255,255,.06)",
+                    borderRadius: 999,
+                    color: "var(--tp)",
+                    fontSize: 11,
+                  }}
                 >
                   <option value="updated_desc">新しい順</option>
                   <option value="updated_asc">古い順</option>
@@ -337,6 +359,7 @@ export default function ProjectHome({
                   textAlign: "center",
                   fontSize: 12,
                   lineHeight: 1.9,
+                  borderRadius: "24px 14px 24px 16px",
                 }}
               >
                 まだ保存済みプロジェクトはありません。<br />
@@ -358,6 +381,7 @@ export default function ProjectHome({
                         borderTop: index === 0 ? "1px solid rgba(91,141,239,.24)" : "1px solid rgba(255,255,255,.05)",
                         borderBottom: "1px solid rgba(255,255,255,.05)",
                         overflow: "hidden",
+                        borderRadius: index % 2 === 0 ? "22px 12px 18px 14px" : "14px 24px 16px 20px",
                       }}
                     >
                       <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 4, background: "linear-gradient(180deg, var(--ac), rgba(110,193,255,.18))" }} />
@@ -402,7 +426,7 @@ export default function ProjectHome({
                             >
                               ✎
                             </button>
-                            <span style={{ padding: "3px 7px", background: "rgba(91,141,239,.1)", color: "var(--ac)", fontSize: 10, fontFamily: "var(--fm)" }}>
+                            <span style={{ padding: "3px 8px", borderRadius: 999, background: "rgba(91,141,239,.1)", color: "var(--ac)", fontSize: 10, fontFamily: "var(--fm)" }}>
                               {modeLabel(data.mode)}
                             </span>
                           </div>
@@ -417,7 +441,7 @@ export default function ProjectHome({
                             ["台本", data.sentences?.length ?? 0],
                             ["枠", data.highlights?.length ?? 0],
                           ].map(([label, value]) => (
-                            <div key={label} style={{ padding: "8px 8px 6px", background: "rgba(255,255,255,.025)", textAlign: "center" }}>
+                            <div key={label} style={{ padding: "8px 8px 6px", background: "rgba(255,255,255,.025)", textAlign: "center", borderRadius: 14 }}>
                               <div style={{ fontSize: 9, color: "var(--tm)", marginBottom: 4 }}>{label}</div>
                               <div style={{ fontFamily: "var(--fm)", fontSize: 15, color: "var(--tp)" }}>{value}</div>
                             </div>
@@ -434,6 +458,7 @@ export default function ProjectHome({
                               color: "#fff",
                               fontSize: 11,
                               fontWeight: 700,
+                              borderRadius: 999,
                             }}
                           >
                             開く
@@ -446,6 +471,7 @@ export default function ProjectHome({
                               background: "var(--rdd)",
                               color: "var(--rd)",
                               fontSize: 11,
+                              borderRadius: 999,
                             }}
                           >
                             削除
@@ -467,6 +493,7 @@ export default function ProjectHome({
               background: "linear-gradient(180deg, rgba(19,21,26,.9), rgba(19,21,26,.76))",
               borderTop: "1px solid rgba(91,141,239,.22)",
               borderLeft: "1px solid rgba(255,255,255,.04)",
+              borderRadius: "24px 18px 20px 16px",
             }}
           >
             <div style={{ position: "absolute", right: 14, top: 0, width: 44, height: 3, background: "var(--ac)" }} />
@@ -490,7 +517,7 @@ export default function ProjectHome({
             <div style={{ height: 1, background: "linear-gradient(90deg, rgba(91,141,239,.24), transparent)", margin: "16px 0 14px" }} />
 
             <div style={{ fontSize: 10, letterSpacing: "1.3px", textTransform: "uppercase", color: "var(--tm)", marginBottom: 8 }}>
-              Workspace Notes
+              利用メモ
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               {[

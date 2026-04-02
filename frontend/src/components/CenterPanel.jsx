@@ -1,3 +1,4 @@
+import { useState } from "react";
 import SlideCanvas from "./SlideCanvas.jsx";
 import AudioView   from "./AudioView.jsx";
 import Playbar     from "./Playbar.jsx";
@@ -10,6 +11,7 @@ import { usePlayback } from "../hooks/usePlayback.js";
  */
 export default function CenterPanel({ state, dispatch, addToast, requestConfirm }) {
   usePlayback(state, dispatch);
+  const [helpOpen, setHelpOpen] = useState(false);
 
   const isAudio = state.appMode === "audio";
   const isHl    = state.appMode === "hl";
@@ -43,19 +45,26 @@ export default function CenterPanel({ state, dispatch, addToast, requestConfirm 
           </span>
         )}
 
-        <span style={{ marginLeft: 10, fontSize: 10, color: "var(--tm)", whiteSpace: "nowrap", padding: "4px 10px", background: "rgba(255,255,255,.025)" }}>
-          <kbd style={{ background: "var(--s3)", padding: "1px 5px", borderRadius: 3, fontSize: 9 }}>Enter</kbd> 次
-          {" / "}
-          <kbd style={{ background: "var(--s3)", padding: "1px 5px", borderRadius: 3, fontSize: 9 }}>Backspace</kbd> 前
-          {" / "}
-          <kbd style={{ background: "var(--s3)", padding: "1px 5px", borderRadius: 3, fontSize: 9 }}>F5</kbd> 先頭から
-          {" / "}
-          <kbd style={{ background: "var(--s3)", padding: "1px 5px", borderRadius: 3, fontSize: 9 }}>Shift+F5</kbd> 現在から
-        </span>
+        <button
+          onClick={() => setHelpOpen(true)}
+          style={{
+            marginLeft: isHl ? "auto" : 10,
+            padding: "5px 12px",
+            borderRadius: 999,
+            border: "1px solid rgba(110,193,255,.24)",
+            background: "rgba(91,141,239,.08)",
+            color: "var(--tp)",
+            fontSize: 10,
+            fontWeight: 700,
+            letterSpacing: ".02em",
+          }}
+        >
+          操作方法
+        </button>
 
         {/* HL / 動画 切替 — HLありモード(appMode==="hl")のときだけ表示 */}
         {isHl && (
-          <div style={{ marginLeft: "auto", display: "flex", gap: 3 }}>
+          <div style={{ display: "flex", gap: 3 }}>
             {[["hl", "🎬 HL表示"], ["plain", "📹 動画"]].map(([v, l]) => (
               <button key={v} onClick={() => dispatch({ type: "SET", k: "prevMode", v })} style={{
                 padding: "3px 9px", border: "1px solid var(--bd2)", borderRadius: 20,
@@ -108,6 +117,128 @@ export default function CenterPanel({ state, dispatch, addToast, requestConfirm 
 
       {/* ── 再生バー ── */}
       <Playbar state={state} dispatch={dispatch} hideSlideNav={isAudio} />
+
+      {helpOpen && (
+        <div
+          onClick={() => setHelpOpen(false)}
+          style={{
+            position: "absolute",
+            inset: 0,
+            background: "rgba(7,8,11,.68)",
+            display: "grid",
+            placeItems: "center",
+            zIndex: 30,
+            padding: 22,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "min(720px, 100%)",
+              maxHeight: "min(82vh, 760px)",
+              overflow: "auto",
+              padding: "18px 18px 16px",
+              borderRadius: 24,
+              border: "1px solid rgba(110,193,255,.18)",
+              background: "linear-gradient(180deg, rgba(19,21,26,.98), rgba(15,16,20,.94))",
+              boxShadow: "0 26px 60px rgba(0,0,0,.38)",
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 16, alignItems: "flex-start", marginBottom: 14 }}>
+              <div>
+                <div style={{ fontSize: 10, letterSpacing: "1.5px", textTransform: "uppercase", color: "var(--ac)", marginBottom: 6 }}>
+                  操作ガイド
+                </div>
+                <div style={{ fontFamily: "var(--ff)", fontSize: 24, lineHeight: 1.1 }}>
+                  編集画面の操作方法
+                </div>
+              </div>
+              <button
+                onClick={() => setHelpOpen(false)}
+                style={{
+                  width: 34,
+                  height: 34,
+                  borderRadius: "50%",
+                  border: "1px solid rgba(255,255,255,.08)",
+                  background: "rgba(255,255,255,.04)",
+                  color: "var(--tp)",
+                  fontSize: 16,
+                  lineHeight: 1,
+                }}
+              >
+                ×
+              </button>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}>
+              {[
+                {
+                  title: "編集のやり直し",
+                  items: [
+                    ["Cmd/Ctrl + Z", "1つ戻す"],
+                    ["Cmd/Ctrl + Shift + Z", "1つ進める"],
+                    ["Cmd/Ctrl + Y", "1つ進める"],
+                    ["マウスのサイドボタン", "戻す / 進める"],
+                  ],
+                },
+                {
+                  title: "スライド移動",
+                  items: [
+                    ["Enter / Space / → / ↓", "次のスライドへ"],
+                    ["Backspace / ← / ↑", "前のスライドへ"],
+                    ["PageDown / N", "次のスライドへ"],
+                    ["PageUp / P", "前のスライドへ"],
+                    ["Home / End", "最初 / 最後のスライドへ"],
+                  ],
+                },
+                {
+                  title: "再生",
+                  items: [
+                    ["F5", "先頭スライドから再生"],
+                    ["Shift + F5", "現在スライドから再生"],
+                    ["Esc", "再生停止 / 描画キャンセル"],
+                  ],
+                },
+                {
+                  title: "プレビュー操作",
+                  items: [
+                    ["ホイール", "スライドを切り替える"],
+                    ["Cmd/Ctrl + ホイール", "拡大 / 縮小"],
+                    ["ドラッグ", "拡大時に表示位置を動かす"],
+                    ["ダブルクリック", "選択中の台本に枠を追加"],
+                  ],
+                },
+              ].map((section) => (
+                <section
+                  key={section.title}
+                  style={{
+                    padding: "14px 14px 12px",
+                    borderRadius: 18,
+                    background: "linear-gradient(180deg, rgba(255,255,255,.035), rgba(255,255,255,.015))",
+                    border: "1px solid rgba(255,255,255,.05)",
+                  }}
+                >
+                  <div style={{ fontSize: 13, fontWeight: 700, color: "var(--tp)", marginBottom: 10 }}>
+                    {section.title}
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    {section.items.map(([key, text]) => (
+                      <div key={`${section.title}-${key}`} style={{ display: "grid", gridTemplateColumns: "minmax(0, 120px) 1fr", gap: 10, alignItems: "start" }}>
+                        <div style={{ fontFamily: "var(--fm)", fontSize: 10, color: "var(--ac)", lineHeight: 1.5 }}>
+                          {key}
+                        </div>
+                        <div style={{ fontSize: 11, color: "var(--ts)", lineHeight: 1.65 }}>
+                          {text}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
