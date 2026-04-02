@@ -77,23 +77,54 @@ export default function App() {
       if (view === "admin") return;
       if (["INPUT", "TEXTAREA"].includes(e.target.tagName) || e.target.contentEditable === "true") return;
       if (confirmProps.open) return;
+      const currentSlideStart = (() => {
+        const targets = state.sents.filter((s) => s.slide_idx === state.curSl);
+        if (!targets.length) return 0;
+        return Math.min(...targets.map((s) => Number(s.start_sec ?? 0)));
+      })();
       switch (e.code) {
         case "Space":
-          e.preventDefault();
-          dispatch({ type: "SET", k: "playing", v: !state.playing });
-          break;
+        case "Enter":
+        case "KeyN":
+        case "PageDown":
         case "ArrowRight":
+        case "ArrowDown":
+          e.preventDefault();
           dispatch({ type: "SET_SL", v: Math.min(state.slides.length - 1, state.curSl + 1) });
           break;
+        case "KeyP":
+        case "PageUp":
         case "ArrowLeft":
+        case "ArrowUp":
+        case "Backspace":
+          e.preventDefault();
           dispatch({ type: "SET_SL", v: Math.max(0, state.curSl - 1) });
           break;
+        case "Home":
+          e.preventDefault();
+          dispatch({ type: "SET_SL", v: 0 });
+          break;
+        case "End":
+          e.preventDefault();
+          dispatch({ type: "SET_SL", v: Math.max(0, state.slides.length - 1) });
+          break;
+        case "F5":
+          e.preventDefault();
+          if (e.shiftKey) {
+            dispatch({ type: "SEEK", v: currentSlideStart });
+          } else {
+            dispatch({ type: "SET_SL", v: 0 });
+            dispatch({ type: "SEEK", v: 0 });
+          }
+          dispatch({ type: "SET", k: "playing", v: true });
+          break;
         case "Escape":
+          e.preventDefault();
           dispatch({ type: "SET", k: "drawMode",   v: false });
           dispatch({ type: "SET", k: "drawSentId", v: null  });
+          dispatch({ type: "SET", k: "playing", v: false });
           break;
         case "Delete":
-        case "Backspace":
           if (state.selHl) dispatch({ type: "RM_HL_ID", v: state.selHl });
           break;
       }

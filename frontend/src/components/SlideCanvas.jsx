@@ -35,12 +35,20 @@ export default function SlideCanvas({ state, dispatch }) {
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
+  const [naturalSize, setNaturalSize] = useState({ width: 0, height: 0 });
 
   const slide = state.slides[state.curSl];
   const curHls = state.hls.filter((h) => h.slide_idx === state.curSl);
   const actSent = state.sents.find((s) => s.start_sec <= state.curT && state.curT < s.end_sec);
   const showBB = state.appMode === "hl";
-  const aspect = slideAspect(slide);
+  const aspect = naturalSize.width > 0 && naturalSize.height > 0
+    ? naturalSize.width / naturalSize.height
+    : slideAspect(slide);
+
+  useEffect(() => {
+    setNaturalSize({ width: 0, height: 0 });
+    resetView();
+  }, [state.curSl, slide?.id]);
 
   useEffect(() => {
     if (!viewportRef.current) return undefined;
@@ -235,6 +243,9 @@ export default function SlideCanvas({ state, dispatch }) {
       </div>
 
       <div style={{ position: "absolute", top: 14, right: 14, zIndex: 40, fontFamily: "var(--fm)", fontSize: 10, color: "var(--tm)" }}>
+        {naturalSize.width > 0 && naturalSize.height > 0
+          ? `${naturalSize.width}×${naturalSize.height} | `
+          : ""}
         Zoom {Math.round(zoom * 100)}%
       </div>
 
@@ -248,7 +259,13 @@ export default function SlideCanvas({ state, dispatch }) {
             src={`data:image/png;base64,${slide.image_base64}`}
             alt={slide.title ?? `slide ${state.curSl + 1}`}
             draggable={false}
-            style={{ width: "100%", height: "100%", display: "block", userSelect: "none", pointerEvents: "none" }}
+            onLoad={(e) => {
+              const img = e.currentTarget;
+              if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+                setNaturalSize({ width: img.naturalWidth, height: img.naturalHeight });
+              }
+            }}
+            style={{ width: "100%", height: "100%", display: "block", objectFit: "contain", background: "#fff", userSelect: "none", pointerEvents: "none" }}
           />
         ) : slide ? (
           <div style={{ width: "100%", height: "100%", display: "grid", placeItems: "center", textAlign: "center", padding: 20 }}>

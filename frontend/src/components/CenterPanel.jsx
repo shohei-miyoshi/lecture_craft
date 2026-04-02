@@ -31,6 +31,16 @@ export default function CenterPanel({ state, dispatch }) {
           </span>
         )}
 
+        <span style={{ marginLeft: 10, fontSize: 10, color: "var(--tm)", whiteSpace: "nowrap" }}>
+          <kbd style={{ background: "var(--s3)", padding: "1px 5px", borderRadius: 3, fontSize: 9 }}>Enter</kbd> 次
+          {" / "}
+          <kbd style={{ background: "var(--s3)", padding: "1px 5px", borderRadius: 3, fontSize: 9 }}>Backspace</kbd> 前
+          {" / "}
+          <kbd style={{ background: "var(--s3)", padding: "1px 5px", borderRadius: 3, fontSize: 9 }}>F5</kbd> 先頭から
+          {" / "}
+          <kbd style={{ background: "var(--s3)", padding: "1px 5px", borderRadius: 3, fontSize: 9 }}>Shift+F5</kbd> 現在から
+        </span>
+
         {/* HL / 動画 切替 — HLありモード(appMode==="hl")のときだけ表示 */}
         {isHl && (
           <div style={{ marginLeft: "auto", display: "flex", gap: 3 }}>
