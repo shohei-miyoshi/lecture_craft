@@ -245,17 +245,6 @@ export default function ProjectHome({
                   >
                     空のプロジェクトを作成
                   </button>
-                  <div
-                    style={{
-                      padding: "10px 12px",
-                      background: "linear-gradient(90deg, rgba(255,255,255,.04), rgba(255,255,255,.015))",
-                      color: "var(--ts)",
-                      fontSize: 11,
-                      borderTop: "1px solid rgba(110,193,255,.18)",
-                    }}
-                  >
-                    保存件数 <span style={{ color: "var(--tp)", fontFamily: "var(--fm)" }}>{projects.length}</span>
-                  </div>
                 </div>
               </div>
             </div>
@@ -309,20 +298,25 @@ export default function ProjectHome({
           <section style={{ position: "relative", paddingTop: 10 }}>
             <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 12, marginBottom: 14 }}>
               <div>
-                <div style={{ fontFamily: "var(--ff)", fontSize: 24, lineHeight: 1.1, marginBottom: 4 }}>保存済みプロジェクト</div>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 4 }}>
+                  <div style={{ fontFamily: "var(--ff)", fontSize: 24, lineHeight: 1.1 }}>保存済みプロジェクト</div>
+                  <div style={{ padding: "2px 8px", borderRadius: 999, background: "rgba(91,141,239,.1)", color: "var(--ac)", fontFamily: "var(--fm)", fontSize: 10 }}>
+                    {projects.length} 件
+                  </div>
+                </div>
                 <div style={{ fontSize: 11, color: "var(--tm)" }}>ローカルブラウザに保存されている編集データです</div>
               </div>
-              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <div style={{ display: "flex", gap: 8, alignItems: "center", paddingBottom: 2 }}>
                 <input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   placeholder="検索"
-                  style={{ width: 110, padding: "6px 8px", background: "rgba(255,255,255,.04)", border: "1px solid var(--bd2)", color: "var(--tp)", fontSize: 11 }}
+                  style={{ width: 110, padding: "6px 8px", background: "transparent", border: "none", borderBottom: "1px solid var(--bd2)", color: "var(--tp)", fontSize: 11 }}
                 />
                 <select
                   value={sortKey}
                   onChange={(e) => setSortKey(e.target.value)}
-                  style={{ padding: "6px 8px", background: "rgba(255,255,255,.04)", border: "1px solid var(--bd2)", color: "var(--tp)", fontSize: 11 }}
+                  style={{ padding: "5px 4px", background: "transparent", border: "none", borderBottom: "1px solid var(--bd2)", color: "var(--tp)", fontSize: 11 }}
                 >
                   <option value="updated_desc">新しい順</option>
                   <option value="updated_asc">古い順</option>
@@ -383,7 +377,31 @@ export default function ProjectHome({
                       <div style={{ display: "grid", gridTemplateColumns: "1.4fr .9fr auto", gap: 16, alignItems: "center" }}>
                         <div>
                           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
-                            <div style={{ fontFamily: "var(--ff)", fontSize: 18, lineHeight: 1.1 }}>{project.name}</div>
+                            <button
+                              onDoubleClick={() => handleRename(project)}
+                              onClick={() => onOpenProject(project)}
+                              style={{ border: "none", background: "none", padding: 0, color: "inherit", textAlign: "left", cursor: "pointer" }}
+                            >
+                              <span style={{ fontFamily: "var(--ff)", fontSize: 18, lineHeight: 1.1 }}>{project.name}</span>
+                            </button>
+                            <button
+                              onClick={() => handleRename(project)}
+                              title="名前変更"
+                              style={{
+                                width: 20,
+                                height: 20,
+                                border: "1px solid rgba(255,255,255,.08)",
+                                borderRadius: "50%",
+                                background: "rgba(255,255,255,.03)",
+                                color: "var(--tm)",
+                                fontSize: 10,
+                                display: "grid",
+                                placeItems: "center",
+                                padding: 0,
+                              }}
+                            >
+                              ✎
+                            </button>
                             <span style={{ padding: "3px 7px", background: "rgba(91,141,239,.1)", color: "var(--ac)", fontSize: 10, fontFamily: "var(--fm)" }}>
                               {modeLabel(data.mode)}
                             </span>
@@ -421,18 +439,6 @@ export default function ProjectHome({
                             開く
                           </button>
                           <button
-                            onClick={() => handleRename(project)}
-                            style={{
-                              padding: "9px 12px",
-                              border: "1px solid var(--bd2)",
-                              background: "rgba(255,255,255,.04)",
-                              color: "var(--tp)",
-                              fontSize: 11,
-                            }}
-                          >
-                            名前変更
-                          </button>
-                          <button
                             onClick={() => handleDelete(project.id)}
                             style={{
                               padding: "9px 12px",
@@ -460,6 +466,7 @@ export default function ProjectHome({
               padding: "18px 18px 16px",
               background: "linear-gradient(180deg, rgba(19,21,26,.9), rgba(19,21,26,.76))",
               borderTop: "1px solid rgba(91,141,239,.22)",
+              borderLeft: "1px solid rgba(255,255,255,.04)",
             }}
           >
             <div style={{ position: "absolute", right: 14, top: 0, width: 44, height: 3, background: "var(--ac)" }} />
