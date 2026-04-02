@@ -18,6 +18,7 @@ export const INITIAL_STATE = {
   sessionId: null,
   baseline:  null,
   projectMeta: null,
+  previewFrame: { width: 1600, height: 900, aspect_ratio: 16 / 9 },
 
   // ナビゲーション
   curSl:    0,
@@ -132,6 +133,33 @@ function buildBaseline(data, appMode) {
   };
 }
 
+function derivePreviewFrame(slides = []) {
+  const rows = (slides ?? [])
+    .map((slide) => {
+      const width = Number(slide?.width ?? 0);
+      const height = Number(slide?.height ?? 0);
+      if (!(width > 0) || !(height > 0)) return null;
+      return { width, height, key: `${width}x${height}` };
+    })
+    .filter(Boolean);
+
+  if (!rows.length) {
+    return { width: 1600, height: 900, aspect_ratio: 16 / 9 };
+  }
+
+  const counts = new Map();
+  for (const row of rows) {
+    counts.set(row.key, (counts.get(row.key) ?? 0) + 1);
+  }
+  const winnerKey = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? rows[0].key;
+  const winner = rows.find((row) => row.key === winnerKey) ?? rows[0];
+  return {
+    width: winner.width,
+    height: winner.height,
+    aspect_ratio: winner.width / Math.max(winner.height, 1),
+  };
+}
+
 function makeStudyEvent(kind, payload = {}) {
   return {
     id: `evt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
@@ -157,6 +185,7 @@ function snapshotHistoryState(state) {
     sessionId: state.sessionId,
     baseline: state.baseline,
     projectMeta: state.projectMeta,
+    previewFrame: state.previewFrame,
     curSl: state.curSl,
     selSent: state.selSent,
     selHl: state.selHl,
@@ -224,6 +253,7 @@ export function reducer(state, action) {
       const savedSettings = action.d.settings ?? null;
       // ロードされたデータに mode が含まれていれば appMode も上書き
       const appMode = action.d.mode ?? state.appMode;
+      const previewFrame = savedSettings?.preview_frame ?? derivePreviewFrame(action.d.slides ?? []);
       const prevMode = savedSettings?.prev_mode
         ?? (appMode === "audio" ? "audio" : appMode === "video" ? "plain" : "hl");
       const baseline = buildBaseline(action.d, appMode);
@@ -249,6 +279,7 @@ export function reducer(state, action) {
         sessionId,
         baseline,
         projectMeta: action.d.project_meta ?? state.projectMeta ?? null,
+        previewFrame,
         historyPast: [],
         historyFuture: [],
         opLogs:    appendLog(

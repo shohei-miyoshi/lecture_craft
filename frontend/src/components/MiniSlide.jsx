@@ -1,15 +1,15 @@
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef } from "react";
 import { KIND_BG, KIND_COLOR } from "../utils/constants.js";
-import { getContainRect, resolveImageSize } from "../utils/imageFrame.js";
+import { getContainRect } from "../utils/imageFrame.js";
 
 export default function MiniSlide({ hl, slide, dispatch }) {
   const ref = useRef(null);
-  const slideKey = slide?.id ?? slide?.image_base64 ?? "mini-slide";
-  const [naturalSize, setNaturalSize] = useState({ width: 0, height: 0, slideKey: null });
   const c = KIND_COLOR[hl.kind];
   const bg = KIND_BG[hl.kind];
-  const safeNaturalSize = naturalSize.slideKey === slideKey ? naturalSize : null;
-  const imageSize = resolveImageSize(slide, safeNaturalSize);
+  const imageSize = {
+    width: Number(slide?.width ?? 1600) || 1600,
+    height: Number(slide?.height ?? 900) || 900,
+  };
   const aspect = imageSize.width / imageSize.height;
   const size = useMemo(() => {
     const width = 144;
@@ -87,14 +87,9 @@ export default function MiniSlide({ hl, slide, dispatch }) {
       >
         {slide?.image_base64 ? (
           <img
-            key={slideKey}
+            key={slide?.id ?? "mini-slide"}
             src={`data:image/png;base64,${slide.image_base64}`}
             alt={slide.title ?? "slide"}
-            onLoad={(e) => {
-              if (e.currentTarget.naturalWidth > 0 && e.currentTarget.naturalHeight > 0) {
-                setNaturalSize({ width: e.currentTarget.naturalWidth, height: e.currentTarget.naturalHeight, slideKey });
-              }
-            }}
             style={{ width: "100%", height: "100%", display: "block", objectFit: "contain", pointerEvents: "none" }}
           />
         ) : (
@@ -135,8 +130,8 @@ export default function MiniSlide({ hl, slide, dispatch }) {
         </div>
       </div>
       <div style={{ fontSize: 9, color: "var(--tm)", textAlign: "center", marginTop: 4, lineHeight: 1.4 }}>
-        {safeNaturalSize?.width > 0 && safeNaturalSize?.height > 0
-          ? `${safeNaturalSize.width}×${safeNaturalSize.height}`
+        {imageSize.width > 0 && imageSize.height > 0
+          ? `${imageSize.width}×${imageSize.height}`
           : "実スライド比率で表示"}
       </div>
     </div>

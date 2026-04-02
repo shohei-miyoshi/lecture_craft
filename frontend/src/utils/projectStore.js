@@ -53,6 +53,7 @@ export function buildProjectPayload(state, name) {
         level: state.level,
         prev_mode: state.prevMode,
         play_speed: state.playSpeed,
+        preview_frame: state.previewFrame ?? null,
       },
       project_meta: {
         id: projectId,
