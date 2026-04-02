@@ -412,7 +412,7 @@ export default function App() {
           <div style={{ position: "absolute", inset: 0, background: "linear-gradient(90deg, rgba(255,255,255,.02) 1px, transparent 1px), linear-gradient(180deg, rgba(255,255,255,.015) 1px, transparent 1px)", backgroundSize: "32px 32px", opacity: 0.12, pointerEvents: "none" }} />
 
         {/* 左パネル（幅可変） */}
-        <div style={{ width: layout.leftWidth, minWidth: layout.leftWidth, maxWidth: layout.leftWidth, overflow: "hidden", flexShrink: 0, minHeight: 0, display: "flex" }}>
+        <div style={{ width: layout.leftWidth, minWidth: layout.leftWidth, maxWidth: layout.leftWidth, overflow: "hidden", flexShrink: 0, minHeight: 0, display: "flex", position: "relative", zIndex: 1 }}>
           <LeftPanel
             state={state}
             dispatch={dispatch}
@@ -430,13 +430,15 @@ export default function App() {
         <ResizeHandle onMouseDown={startResizeLeft} resizing={resizingLeft} />
 
         {/* 中央パネル（残り幅を占有） */}
-        <CenterPanel state={state} dispatch={dispatch} addToast={addToast} requestConfirm={requestConfirm} />
+        <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: "flex", position: "relative", zIndex: 1 }}>
+          <CenterPanel state={state} dispatch={dispatch} addToast={addToast} requestConfirm={requestConfirm} />
+        </div>
 
         {/* 右ハンドル */}
         <ResizeHandle onMouseDown={startResizeRight} resizing={resizingRight} />
 
         {/* 右パネル（幅可変） — タブ付き */}
-        <div style={{ width: layout.rightWidth, minWidth: layout.rightWidth, maxWidth: layout.rightWidth, overflow: "hidden", flexShrink: 0, minHeight: 0, display: "flex" }}>
+        <div style={{ width: layout.rightWidth, minWidth: layout.rightWidth, maxWidth: layout.rightWidth, overflow: "hidden", flexShrink: 0, minHeight: 0, display: "flex", position: "relative", zIndex: 1 }}>
           <RightPanel
             state={state}
             dispatch={dispatch}

@@ -304,10 +304,6 @@ export default function SlideCanvas({ state, dispatch, addToast, requestConfirm 
         拡大率 {Math.round(zoom * 100)}%
       </div>
 
-      <div style={{ position: "absolute", bottom: 10, right: 14, zIndex: 40, fontFamily: "var(--fm)", fontSize: 9, color: "var(--tm)" }}>
-        wheel: ページ切替 / ctrl+wheel: 拡大縮小
-      </div>
-
       <div
         ref={stageRef}
         onMouseDown={onStageMouseDown}
