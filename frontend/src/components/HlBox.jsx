@@ -29,9 +29,13 @@ export const HL_PULSE_CSS = `
 `;
 const PULSE_ANIM = { marker:"hlpulse_ac", arrow:"hlpulse_ac", box:"hlpulse_ac" };
 
-export default function HlBox({ hl, isSel, isActive, isPlaying, wrapRef, dispatch, requestConfirm }) {
+export default function HlBox({ hl, isSel, isActive, isPlaying, frame, dispatch, requestConfirm }) {
   const c   = KIND_COLOR[hl.kind];
   const bg  = isActive ? KIND_BG_SEL[hl.kind] : KIND_BG[hl.kind];
+  const leftPx = frame.left + (frame.width * hl.x) / 100;
+  const topPx = frame.top + (frame.height * hl.y) / 100;
+  const widthPx = (frame.width * hl.w) / 100;
+  const heightPx = (frame.height * hl.h) / 100;
 
   // 再生中：アクティブBB=不透明、非アクティブBB=薄く
   const opacity  = isPlaying ? (isActive ? 1 : 0.28) : 1;
@@ -46,11 +50,10 @@ export default function HlBox({ hl, isSel, isActive, isPlaying, wrapRef, dispatc
     e.stopPropagation();
     dispatch({ type: "PUSH_HISTORY" });
     dispatch({ type: "SEL_HL", v: hl.id });
-    const wr = wrapRef.current.getBoundingClientRect();
     const ox = e.clientX, oy = e.clientY, ox0 = hl.x, oy0 = hl.y;
     const mv = (ev) => dispatch({ type: "UPD_HL", id: hl.id,
-      x: Math.max(0, Math.min(100 - hl.w, ox0 + (ev.clientX - ox) / wr.width  * 100)),
-      y: Math.max(0, Math.min(100 - hl.h, oy0 + (ev.clientY - oy) / wr.height * 100)),
+      x: Math.max(0, Math.min(100 - hl.w, ox0 + (ev.clientX - ox) / frame.width  * 100)),
+      y: Math.max(0, Math.min(100 - hl.h, oy0 + (ev.clientY - oy) / frame.height * 100)),
       w: hl.w, hv: hl.h });
     const up = () => { document.removeEventListener("mousemove", mv); document.removeEventListener("mouseup", up); };
     document.addEventListener("mousemove", mv);
@@ -62,12 +65,11 @@ export default function HlBox({ hl, isSel, isActive, isPlaying, wrapRef, dispatc
     if (isPlaying) return;
     e.preventDefault(); e.stopPropagation();
     dispatch({ type: "PUSH_HISTORY" });
-    const wr = wrapRef.current.getBoundingClientRect();
     const ox = e.clientX, oy = e.clientY;
     const orig = { x: hl.x, y: hl.y, w: hl.w, h: hl.h };
     const mv = (ev) => {
-      const dx = (ev.clientX - ox) / wr.width  * 100;
-      const dy = (ev.clientY - oy) / wr.height * 100;
+      const dx = (ev.clientX - ox) / frame.width  * 100;
+      const dy = (ev.clientY - oy) / frame.height * 100;
       let { x, y, w, h } = orig;
       if (dir.includes("e"))  w  = Math.max(4, orig.w + dx);
       if (dir.includes("s"))  h  = Math.max(4, orig.h + dy);
@@ -85,7 +87,10 @@ export default function HlBox({ hl, isSel, isActive, isPlaying, wrapRef, dispatc
   return (
     <div data-hl-interactive="1" onMouseDown={onMoveStart} style={{
       position: "absolute",
-      left: hl.x + "%", top: hl.y + "%", width: hl.w + "%", height: hl.h + "%",
+      left: leftPx,
+      top: topPx,
+      width: widthPx,
+      height: heightPx,
       border: `${borderWidth}px solid ${c}`,
       background: bg,
       borderRadius: 3,

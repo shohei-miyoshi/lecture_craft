@@ -1,33 +1,28 @@
 import { useMemo, useRef, useState } from "react";
 import { KIND_BG, KIND_COLOR } from "../utils/constants.js";
-
-function slideAspect(slide) {
-  const width = Number(slide?.width ?? 0);
-  const height = Number(slide?.height ?? 0);
-  if (width > 0 && height > 0) return width / height;
-  if (Number(slide?.aspect_ratio ?? 0) > 0) return Number(slide.aspect_ratio);
-  return 16 / 9;
-}
+import { getContainRect, resolveImageSize } from "../utils/imageFrame.js";
 
 export default function MiniSlide({ hl, slide, dispatch }) {
   const ref = useRef(null);
   const [naturalSize, setNaturalSize] = useState({ width: 0, height: 0 });
   const c = KIND_COLOR[hl.kind];
   const bg = KIND_BG[hl.kind];
-  const aspect = naturalSize.width > 0 && naturalSize.height > 0
-    ? naturalSize.width / naturalSize.height
-    : slideAspect(slide);
+  const imageSize = resolveImageSize(slide, naturalSize);
+  const aspect = imageSize.width / imageSize.height;
   const size = useMemo(() => {
     const width = 144;
     return { width, height: Math.round(width / aspect) };
   }, [aspect]);
+  const imageFrame = useMemo(
+    () => getContainRect(size.width, size.height, imageSize.width, imageSize.height),
+    [imageSize.height, imageSize.width, size.height, size.width],
+  );
 
   const onMoveStart = (e) => {
     if (e.target.dataset.rh) return;
     e.preventDefault();
     e.stopPropagation();
     dispatch({ type: "PUSH_HISTORY" });
-    const wr = ref.current.getBoundingClientRect();
     const ox = e.clientX;
     const oy = e.clientY;
     const ox0 = hl.x;
@@ -35,8 +30,8 @@ export default function MiniSlide({ hl, slide, dispatch }) {
     const mv = (ev) => dispatch({
       type: "UPD_HL",
       id: hl.id,
-      x: Math.max(0, Math.min(100 - hl.w, ox0 + ((ev.clientX - ox) / wr.width) * 100)),
-      y: Math.max(0, Math.min(100 - hl.h, oy0 + ((ev.clientY - oy) / wr.height) * 100)),
+      x: Math.max(0, Math.min(100 - hl.w, ox0 + ((ev.clientX - ox) / imageFrame.width) * 100)),
+      y: Math.max(0, Math.min(100 - hl.h, oy0 + ((ev.clientY - oy) / imageFrame.height) * 100)),
       w: hl.w,
       hv: hl.h,
     });
@@ -52,7 +47,6 @@ export default function MiniSlide({ hl, slide, dispatch }) {
     e.preventDefault();
     e.stopPropagation();
     dispatch({ type: "PUSH_HISTORY" });
-    const wr = ref.current.getBoundingClientRect();
     const ox = e.clientX;
     const oy = e.clientY;
     const ow = hl.w;
@@ -62,8 +56,8 @@ export default function MiniSlide({ hl, slide, dispatch }) {
       id: hl.id,
       x: hl.x,
       y: hl.y,
-      w: Math.max(4, Math.min(100 - hl.x, ow + ((ev.clientX - ox) / wr.width) * 100)),
-      hv: Math.max(4, Math.min(100 - hl.y, oh + ((ev.clientY - oy) / wr.height) * 100)),
+      w: Math.max(4, Math.min(100 - hl.x, ow + ((ev.clientX - ox) / imageFrame.width) * 100)),
+      hv: Math.max(4, Math.min(100 - hl.y, oh + ((ev.clientY - oy) / imageFrame.height) * 100)),
     });
     const up = () => {
       document.removeEventListener("mousemove", mv);
@@ -110,10 +104,10 @@ export default function MiniSlide({ hl, slide, dispatch }) {
           onMouseDown={onResizeStart}
           style={{
             position: "absolute",
-            left: `${hl.x}%`,
-            top: `${hl.y}%`,
-            width: `${hl.w}%`,
-            height: `${hl.h}%`,
+            left: imageFrame.left + (imageFrame.width * hl.x) / 100,
+            top: imageFrame.top + (imageFrame.height * hl.y) / 100,
+            width: (imageFrame.width * hl.w) / 100,
+            height: (imageFrame.height * hl.h) / 100,
             border: `1.5px solid ${c}`,
             background: bg,
             borderRadius: 2,

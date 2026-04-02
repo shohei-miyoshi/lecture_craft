@@ -6,7 +6,7 @@ import { buildProjectPayload, deleteProject, listProjects, loadProject, saveProj
 
 const JOB_POLL_MS = 2000;
 
-export default function LeftPanel({ state, dispatch, pdfFile, setPdfFile, addToast, requestConfirm, handleReset }) {
+export default function LeftPanel({ state, dispatch, pdfFile, setPdfFile, addToast, requestConfirm, requestPrompt, handleReset }) {
   const [drag, setDrag] = useState(false);
   const [projectRefreshKey, setProjectRefreshKey] = useState(0);
   const fileInputRef = useRef(null); // リセット後のリセット用
@@ -111,13 +111,26 @@ export default function LeftPanel({ state, dispatch, pdfFile, setPdfFile, addToa
 
   const handleSaveProject = () => {
     const defaultName = state.projectMeta?.name ?? pdfFile?.name?.replace(/\.pdf$/i, "") ?? "新しいプロジェクト";
-    const name = window.prompt("保存するプロジェクト名を入力してください", defaultName);
-    if (!name) return;
-    const payload = buildProjectPayload(state, name);
-    saveProject(payload);
-    dispatch({ type: "SET", k: "projectMeta", v: payload.data.project_meta });
-    setProjectRefreshKey((v) => v + 1);
-    addToast("ok", `プロジェクト「${name}」を保存しました`);
+    requestPrompt({
+      title: "プロジェクトを保存",
+      message: "保存するプロジェクト名を入力してください。",
+      confirmLabel: "保存する",
+      confirmColor: "var(--ac)",
+      confirmBg: "var(--adim)",
+      confirmBorder: "rgba(91,141,239,.35)",
+      inputLabel: "プロジェクト名",
+      inputInitialValue: defaultName,
+      inputPlaceholder: "例: パターン認識の講義",
+      onConfirm: (value) => {
+        const name = String(value ?? "").trim();
+        if (!name) return;
+        const payload = buildProjectPayload(state, name);
+        saveProject(payload);
+        dispatch({ type: "SET", k: "projectMeta", v: payload.data.project_meta });
+        setProjectRefreshKey((v) => v + 1);
+        addToast("ok", `プロジェクト「${name}」を保存しました`);
+      },
+    });
   };
 
   const doLoadProject = (projectId) => {

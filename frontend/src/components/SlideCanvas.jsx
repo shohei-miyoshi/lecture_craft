@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import HlBox from "./HlBox.jsx";
 import { rn } from "../utils/helpers.js";
 import { findHighlightForSentence } from "../utils/highlights.js";
+import { getContainRect, resolveImageSize } from "../utils/imageFrame.js";
 
 const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 3;
@@ -17,6 +18,8 @@ function slideAspect(slide) {
   if (Number(slide?.aspect_ratio ?? 0) > 0) return Number(slide.aspect_ratio);
   return 16 / 9;
 }
+
+const CHROME_INSETS = { top: 48, right: 16, bottom: 34, left: 16 };
 
 function clampPan(nextPan, zoom, baseSize) {
   const extraX = Math.max(0, (baseSize.width * zoom - baseSize.width) / 2);
@@ -43,9 +46,9 @@ export default function SlideCanvas({ state, dispatch, addToast, requestConfirm 
   const curHls = state.hls.filter((h) => h.slide_idx === state.curSl);
   const actSent = state.sents.find((s) => s.start_sec <= state.curT && state.curT < s.end_sec);
   const showBB = state.appMode === "hl";
-  const aspect = naturalSize.width > 0 && naturalSize.height > 0
-    ? naturalSize.width / naturalSize.height
-    : slideAspect(slide);
+  const imageSize = resolveImageSize(slide, naturalSize);
+  const aspect = imageSize.width / imageSize.height;
+  const imageReady = !slide?.image_base64 || naturalSize.width > 0;
 
   useEffect(() => {
     setNaturalSize({ width: 0, height: 0 });
@@ -66,8 +69,8 @@ export default function SlideCanvas({ state, dispatch, addToast, requestConfirm 
   }, []);
 
   const baseSize = useMemo(() => {
-    const vw = viewportSize.width || 1;
-    const vh = viewportSize.height || 1;
+    const vw = Math.max(1, (viewportSize.width || 1) - CHROME_INSETS.left - CHROME_INSETS.right);
+    const vh = Math.max(1, (viewportSize.height || 1) - CHROME_INSETS.top - CHROME_INSETS.bottom);
     let width = vw;
     let height = width / aspect;
     if (height > vh) {
@@ -79,6 +82,23 @@ export default function SlideCanvas({ state, dispatch, addToast, requestConfirm 
       height: Math.max(80, height),
     };
   }, [aspect, viewportSize.height, viewportSize.width]);
+
+  const stageArea = useMemo(() => ({
+    left: CHROME_INSETS.left,
+    top: CHROME_INSETS.top,
+    width: Math.max(1, (viewportSize.width || 1) - CHROME_INSETS.left - CHROME_INSETS.right),
+    height: Math.max(1, (viewportSize.height || 1) - CHROME_INSETS.top - CHROME_INSETS.bottom),
+  }), [viewportSize.height, viewportSize.width]);
+
+  const stageSize = useMemo(() => ({
+    width: baseSize.width * zoom,
+    height: baseSize.height * zoom,
+  }), [baseSize.height, baseSize.width, zoom]);
+
+  const imageFrame = useMemo(
+    () => getContainRect(stageSize.width, stageSize.height, imageSize.width, imageSize.height),
+    [imageSize.height, imageSize.width, stageSize.height, stageSize.width],
+  );
 
   useEffect(() => {
     setPan((prev) => clampPan(prev, zoom, baseSize));
@@ -143,6 +163,17 @@ export default function SlideCanvas({ state, dispatch, addToast, requestConfirm 
     };
   }, [zoom, baseSize]);
 
+  const getImagePercentPoint = (clientX, clientY) => {
+    const rect = stageRef.current?.getBoundingClientRect();
+    if (!rect || imageFrame.width <= 0 || imageFrame.height <= 0) return null;
+    const imageLeft = rect.left + imageFrame.left;
+    const imageTop = rect.top + imageFrame.top;
+    return {
+      x: clamp(((clientX - imageLeft) / imageFrame.width) * 100, 0, 100),
+      y: clamp(((clientY - imageTop) / imageFrame.height) * 100, 0, 100),
+    };
+  };
+
   const onStageMouseDown = (e) => {
     if (!state.drawMode) {
       startPan(e);
@@ -150,24 +181,20 @@ export default function SlideCanvas({ state, dispatch, addToast, requestConfirm 
     }
     e.preventDefault();
     e.stopPropagation();
-    const rc = stageRef.current?.getBoundingClientRect();
-    if (!rc) return;
-    const sx = ((e.clientX - rc.left) / rc.width) * 100;
-    const sy = ((e.clientY - rc.top) / rc.height) * 100;
-    drawRef.current = { sx, sy };
-    setGhost({ x: sx, y: sy, w: 0, h: 0 });
+    const point = getImagePercentPoint(e.clientX, e.clientY);
+    if (!point) return;
+    drawRef.current = { sx: point.x, sy: point.y };
+    setGhost({ x: point.x, y: point.y, w: 0, h: 0 });
   };
 
   const onStageDoubleClick = (e) => {
     if (state.drawMode || !showBB) return;
     const selectedSentence = state.sents.find((s) => s.id === state.selSent);
-    const rc = stageRef.current?.getBoundingClientRect();
-    if (!rc) return;
-    const cx = ((e.clientX - rc.left) / rc.width) * 100;
-    const cy = ((e.clientY - rc.top) / rc.height) * 100;
+    const point = getImagePercentPoint(e.clientX, e.clientY);
+    if (!point) return;
     const region = {
-      x: rn(clamp(cx - 8, 0, 84)),
-      y: rn(clamp(cy - 6, 0, 88)),
+      x: rn(clamp(point.x - 8, 0, 84)),
+      y: rn(clamp(point.y - 6, 0, 88)),
       w: 16,
       h: 12,
     };
@@ -181,29 +208,27 @@ export default function SlideCanvas({ state, dispatch, addToast, requestConfirm 
   useEffect(() => {
     if (!state.drawMode) return undefined;
     const onMove = (e) => {
-      if (!drawRef.current || !stageRef.current) return;
-      const rc = stageRef.current.getBoundingClientRect();
-      const cx = ((e.clientX - rc.left) / rc.width) * 100;
-      const cy = ((e.clientY - rc.top) / rc.height) * 100;
+      if (!drawRef.current) return;
+      const point = getImagePercentPoint(e.clientX, e.clientY);
+      if (!point) return;
       const { sx, sy } = drawRef.current;
       setGhost({
-        x: Math.min(sx, cx),
-        y: Math.min(sy, cy),
-        w: Math.abs(cx - sx),
-        h: Math.abs(cy - sy),
+        x: Math.min(sx, point.x),
+        y: Math.min(sy, point.y),
+        w: Math.abs(point.x - sx),
+        h: Math.abs(point.y - sy),
       });
     };
     const onUp = (e) => {
-      if (!drawRef.current || !stageRef.current) return;
-      const rc = stageRef.current.getBoundingClientRect();
-      const cx = ((e.clientX - rc.left) / rc.width) * 100;
-      const cy = ((e.clientY - rc.top) / rc.height) * 100;
+      if (!drawRef.current) return;
+      const point = getImagePercentPoint(e.clientX, e.clientY);
+      if (!point) return;
       const { sx, sy } = drawRef.current;
       const region = {
-        x: rn(Math.min(sx, cx)),
-        y: rn(Math.min(sy, cy)),
-        w: rn(Math.abs(cx - sx)),
-        h: rn(Math.abs(cy - sy)),
+        x: rn(Math.min(sx, point.x)),
+        y: rn(Math.min(sy, point.y)),
+        w: rn(Math.abs(point.x - sx)),
+        h: rn(Math.abs(point.y - sy)),
       };
       drawRef.current = null;
       setGhost(null);
@@ -221,14 +246,14 @@ export default function SlideCanvas({ state, dispatch, addToast, requestConfirm 
       document.removeEventListener("mousemove", onMove);
       document.removeEventListener("mouseup", onUp);
     };
-  }, [state.drawMode, state.drawSentId, state.hls, dispatch]);
+  }, [state.drawMode, state.drawSentId, state.hls, dispatch, imageFrame.height, imageFrame.left, imageFrame.top, imageFrame.width]);
 
   const stageStyle = {
     position: "absolute",
-    left: "50%",
-    top: "50%",
-    width: `${baseSize.width * zoom}px`,
-    height: `${baseSize.height * zoom}px`,
+    left: stageArea.left + stageArea.width / 2,
+    top: stageArea.top + stageArea.height / 2,
+    width: `${stageSize.width}px`,
+    height: `${stageSize.height}px`,
     transform: `translate(calc(-50% + ${pan.x}px), calc(-50% + ${pan.y}px))`,
     borderRadius: 14,
     overflow: "hidden",
@@ -283,6 +308,10 @@ export default function SlideCanvas({ state, dispatch, addToast, requestConfirm 
         拡大率 {Math.round(zoom * 100)}%
       </div>
 
+      <div style={{ position: "absolute", bottom: 10, right: 14, zIndex: 40, fontFamily: "var(--fm)", fontSize: 9, color: "var(--tm)" }}>
+        wheel: ページ切替 / ctrl+wheel: 拡大縮小
+      </div>
+
       <div
         ref={stageRef}
         onMouseDown={onStageMouseDown}
@@ -319,14 +348,14 @@ export default function SlideCanvas({ state, dispatch, addToast, requestConfirm 
           </div>
         )}
 
-        {showBB && curHls.map((hl) => (
+        {showBB && imageReady && curHls.map((hl) => (
           <HlBox
             key={hl.id}
             hl={hl}
             isSel={hl.id === state.selHl}
             isActive={!!(actSent && (hl.sentence_ids ?? []).includes(actSent.id))}
             isPlaying={state.playing}
-            wrapRef={stageRef}
+            frame={imageFrame}
             dispatch={dispatch}
             requestConfirm={requestConfirm}
           />
@@ -336,10 +365,10 @@ export default function SlideCanvas({ state, dispatch, addToast, requestConfirm 
           <div
             style={{
               position: "absolute",
-              left: `${ghost.x}%`,
-              top: `${ghost.y}%`,
-              width: `${ghost.w}%`,
-              height: `${ghost.h}%`,
+              left: imageFrame.left + (imageFrame.width * ghost.x) / 100,
+              top: imageFrame.top + (imageFrame.height * ghost.y) / 100,
+              width: (imageFrame.width * ghost.w) / 100,
+              height: (imageFrame.height * ghost.h) / 100,
               border: "2px dashed var(--am)",
               background: "rgba(232,169,75,.08)",
               borderRadius: 3,

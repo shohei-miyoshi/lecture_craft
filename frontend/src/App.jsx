@@ -43,7 +43,7 @@ export default function App() {
   const [view, setView]           = useState(() => (window.location.hash === "#admin" ? "admin" : "studio"));
   const [studioScreen, setStudioScreen] = useState("home");
   const { toasts, addToast }      = useToast();
-  const { confirmProps, requestConfirm } = useConfirm();
+  const { confirmProps, requestConfirm, requestPrompt } = useConfirm();
   const { layout, startResizeLeft, startResizeRight, resizingLeft, resizingRight, resetLayout } = useResizableLayout();
 
   // ── リセット確認 ──
@@ -359,6 +359,7 @@ export default function App() {
             setPdfFile={setPdfFile}
             addToast={addToast}
             requestConfirm={requestConfirm}
+            requestPrompt={requestPrompt}
             handleReset={handleReset}
           />
         </div>

@@ -14,28 +14,48 @@ import { useEffect, useRef } from "react";
  */
 export default function ConfirmDialog({
   open,
+  variant  = "confirm",
   title    = "確認",
   message  = "この操作は取り消せません。",
   confirmLabel = "削除",
   confirmColor = "var(--rd)",
   confirmBg    = "var(--rdd)",
   confirmBorder= "rgba(224,91,91,.35)",
+  inputLabel = "入力",
+  inputPlaceholder = "",
+  inputInitialValue = "",
   onConfirm,
   onCancel,
 }) {
   const cancelRef = useRef(null);
+  const inputRef = useRef(null);
+  const valueRef = useRef(inputInitialValue);
+
+  useEffect(() => {
+    valueRef.current = inputInitialValue;
+  }, [inputInitialValue, open]);
 
   // Escキーでキャンセル、Enterで確定
   useEffect(() => {
     if (!open) return;
-    // フォーカスをキャンセルボタンに当てる（Enterで誤確定しないよう）
-    setTimeout(() => cancelRef.current?.focus(), 0);
+    setTimeout(() => {
+      if (variant === "prompt") {
+        inputRef.current?.focus();
+        inputRef.current?.select?.();
+      } else {
+        cancelRef.current?.focus();
+      }
+    }, 0);
     const h = (e) => {
       if (e.key === "Escape") onCancel();
+      if (e.key === "Enter" && variant === "prompt") {
+        e.preventDefault();
+        onConfirm?.(valueRef.current);
+      }
     };
     window.addEventListener("keydown", h);
     return () => window.removeEventListener("keydown", h);
-  }, [open]);
+  }, [onCancel, onConfirm, open, variant]);
 
   if (!open) return null;
 
@@ -70,6 +90,28 @@ export default function ConfirmDialog({
         <div style={{ fontSize: 12, color: "var(--ts)", lineHeight: 1.65, marginBottom: 20 }}>
           {message}
         </div>
+        {variant === "prompt" && (
+          <div style={{ marginBottom: 18 }}>
+            <div style={{ fontSize: 10, color: "var(--tm)", marginBottom: 6 }}>{inputLabel}</div>
+            <input
+              ref={inputRef}
+              defaultValue={inputInitialValue}
+              placeholder={inputPlaceholder}
+              onChange={(e) => {
+                valueRef.current = e.target.value;
+              }}
+              style={{
+                width: "100%",
+                padding: "9px 10px",
+                background: "var(--s2)",
+                border: "1px solid var(--bd2)",
+                color: "var(--tp)",
+                fontSize: 12,
+                outline: "none",
+              }}
+            />
+          </div>
+        )}
         {/* ボタン行 */}
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
           <button
@@ -89,7 +131,7 @@ export default function ConfirmDialog({
             キャンセル
           </button>
           <button
-            onClick={onConfirm}
+            onClick={() => onConfirm?.(valueRef.current)}
             style={{
               padding: "7px 16px",
               border: `1px solid ${confirmBorder}`,
