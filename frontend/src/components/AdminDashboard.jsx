@@ -133,6 +133,7 @@ export default function AdminDashboard({ addToast }) {
   const jobsByMode = useMemo(() => data?.breakdowns?.jobs_by_mode ?? [], [data]);
   const jobsByStatus = useMemo(() => data?.breakdowns?.jobs_by_status ?? [], [data]);
   const exportsByType = useMemo(() => data?.breakdowns?.exports_by_type ?? [], [data]);
+  const researchByTrigger = useMemo(() => data?.breakdowns?.research_by_trigger ?? [], [data]);
 
   return (
     <div style={{ height: "100%", overflow: "auto", background: "radial-gradient(circle at top left, rgba(91,141,239,.14), transparent 34%), radial-gradient(circle at top right, rgba(76,175,130,.12), transparent 28%), var(--bg)" }}>
@@ -160,20 +161,22 @@ export default function AdminDashboard({ addToast }) {
           </div>
         ) : (
           <>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 12, marginBottom: 18 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(5, minmax(0, 1fr))", gap: 12, marginBottom: 18 }}>
               <MetricCard title="Generate Jobs" value={data?.usage?.jobs_total} hint="累計ジョブ数" accent="rgba(91,141,239,.24)" tone="var(--ac)" />
               <MetricCard title="Last 7 Days" value={data?.usage?.jobs_last_7d} hint="直近7日" accent="rgba(76,175,130,.24)" tone="var(--gr)" />
               <MetricCard title="Exports" value={data?.usage?.exports_total} hint="累計書き出し" accent="rgba(232,169,75,.24)" tone="var(--am)" />
+              <MetricCard title="Research Sessions" value={data?.research?.total_sessions} hint="研究ログ保存数" accent="rgba(167,139,250,.24)" tone="var(--pu)" />
               <MetricCard title="Experiments" value={data?.experiments?.total_runs} hint="検出された run" accent="rgba(167,139,250,.24)" tone="var(--pu)" />
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr 1fr", gap: 12, marginBottom: 18 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr 1fr 1fr", gap: 12, marginBottom: 18 }}>
               <BreakdownList title="Jobs by Mode" items={jobsByMode} color="linear-gradient(90deg, #5b8def, #77a4ff)" />
               <BreakdownList title="Jobs by Status" items={jobsByStatus} color="linear-gradient(90deg, #4caf82, #79d7aa)" />
               <BreakdownList title="Exports by Type" items={exportsByType} color="linear-gradient(90deg, #e8a94b, #ffd28a)" />
+              <BreakdownList title="Research by Trigger" items={researchByTrigger} color="linear-gradient(90deg, #a78bfa, #d1c1ff)" />
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "1.3fr 1fr", gap: 12, marginBottom: 18 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr 1fr", gap: 12, marginBottom: 18 }}>
               <section style={{ padding: 16, borderRadius: 14, background: "var(--s2)", border: "1px solid var(--bd)" }}>
                 <div style={{ fontFamily: "var(--ff)", fontSize: 13, marginBottom: 10 }}>Usage Snapshot</div>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 10 }}>
@@ -194,6 +197,27 @@ export default function AdminDashboard({ addToast }) {
               </section>
 
               <section style={{ padding: 16, borderRadius: 14, background: "var(--s2)", border: "1px solid var(--bd)" }}>
+                <div style={{ fontFamily: "var(--ff)", fontSize: 13, marginBottom: 10 }}>Research Snapshot</div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 }}>
+                  {[
+                    ["highlights_modified", "HL修正", "var(--am)"],
+                    ["highlights_accepted", "HL許容", "var(--gr)"],
+                    ["sentences_text_modified", "台本文修正", "var(--ac)"],
+                    ["sentences_timing_modified", "台本時間修正", "var(--pu)"],
+                    ["sentences_added", "台本追加", "var(--tp)"],
+                    ["sentences_removed", "台本削除", "var(--rd)"],
+                  ].map(([key, label, tone]) => (
+                    <div key={key} style={{ padding: 12, borderRadius: 12, background: "var(--sur)", border: "1px solid var(--bd)" }}>
+                      <div style={{ fontSize: 10, color: "var(--tm)", marginBottom: 6 }}>{label}</div>
+                      <div style={{ fontFamily: "var(--fm)", fontSize: 20, color: tone }}>
+                        {num(data?.research?.summary_totals?.[key])}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+
+              <section style={{ padding: 16, borderRadius: 14, background: "var(--s2)", border: "1px solid var(--bd)" }}>
                 <div style={{ fontFamily: "var(--ff)", fontSize: 13, marginBottom: 10 }}>Experiment Snapshot</div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                   <div style={{ padding: 12, borderRadius: 12, background: "var(--sur)", border: "1px solid var(--bd)" }}>
@@ -208,7 +232,7 @@ export default function AdminDashboard({ addToast }) {
               </section>
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "1.25fr 1fr", gap: 12, marginBottom: 18 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: 12, marginBottom: 18 }}>
               <TableSection
                 title="Recent Generate Jobs"
                 rows={data?.recent_jobs ?? []}
@@ -234,6 +258,20 @@ export default function AdminDashboard({ addToast }) {
                 ]}
               />
             </div>
+
+            <TableSection
+              title="Recent Research Sessions"
+              rows={data?.research?.recent_sessions ?? []}
+              emptyText="研究セッションの保存履歴はまだありません"
+              columns={[
+                { key: "session_id", label: "Session", mono: true, emphasis: true },
+                { key: "trigger", label: "Trigger", emphasis: true },
+                { key: "mode", label: "Mode" },
+                { key: "research", label: "HL修正", mono: true, render: (row) => row.research?.summary?.highlights_modified ?? "0" },
+                { key: "research", label: "台本文修正", mono: true, render: (row) => row.research?.summary?.sentences_text_modified ?? "0" },
+                { key: "saved_at", label: "Saved", render: (row) => timeText(row.saved_at) },
+              ]}
+            />
 
             <TableSection
               title="Recent Experiment Runs"

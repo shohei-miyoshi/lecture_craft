@@ -17,6 +17,7 @@ OUTPUT_ROOT = PROJECT_ROOT / "outputs"
 API_CACHE_ROOT = OUTPUT_ROOT / "api_cache"
 API_JOB_ROOT = OUTPUT_ROOT / "api_jobs"
 API_EVENT_ROOT = OUTPUT_ROOT / "api_events"
+RESEARCH_SESSION_ROOT = OUTPUT_ROOT / "research_sessions"
 AUDIO_SHARED_CACHE_ROOT = OUTPUT_ROOT / "shared_audio"
 PIPELINE_VERSION = "20260401_async_jobs_v1"
 
@@ -102,6 +103,13 @@ def event_snapshot_path(prefix: str) -> Path:
     API_EVENT_ROOT.mkdir(parents=True, exist_ok=True)
     safe_prefix = _safe_stem(prefix)
     return API_EVENT_ROOT / f"{safe_prefix}_{datetime_slug()}.json"
+
+
+def research_snapshot_path(session_id: str, trigger: str) -> Path:
+    RESEARCH_SESSION_ROOT.mkdir(parents=True, exist_ok=True)
+    safe_session = _safe_stem(session_id)
+    safe_trigger = _safe_stem(trigger)
+    return RESEARCH_SESSION_ROOT / f"{safe_session}_{safe_trigger}_{datetime_slug()}.json"
 
 
 def get_named_lock(name: str) -> threading.Lock:

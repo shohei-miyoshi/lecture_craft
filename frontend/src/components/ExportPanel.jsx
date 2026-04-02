@@ -1,5 +1,6 @@
 import { API_URL, DETAIL_VALS, DIFF_VALS } from "../utils/constants.js";
 import { fmt } from "../utils/helpers.js";
+import { buildResearchSnapshot } from "../utils/research.js";
 
 const EXPORT_ROWS = [
   ["🎬 ハイライトあり動画", "video_highlight", ".mp4"],
@@ -16,18 +17,46 @@ const EXPORT_ROWS = [
  * 動画 / 音声はバックエンドに委譲
  */
 export default function ExportPanel({ state, dispatch, addToast }) {
+  const persistResearchSession = async (trigger) => {
+    const research = buildResearchSnapshot(state, trigger);
+    try {
+      await fetch(`${API_URL}/api/research/session`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          session_id: state.sessionId,
+          trigger,
+          mode: state.appMode,
+          generation_ref: state.genRef ?? {},
+          operation_logs: state.opLogs,
+          research,
+          settings: {
+            detail: DETAIL_VALS[state.detail],
+            difficulty: DIFF_VALS[state.level],
+            preview_mode: state.prevMode,
+            play_speed: state.playSpeed,
+          },
+        }),
+      });
+    } catch {
+      // 研究ログ保存は best effort。ローカル作業を止めない。
+    }
+    return research;
+  };
 
   const doExport = async (type) => {
     if (!state.generated) { addToast("er", "先に生成してください"); return; }
 
     // ── JSON エクスポート（フロントのみ） ──
     if (type === "json") {
+      const research = await persistResearchSession("export_json");
       const data = {
-        slides:     state.slides.map((s) => ({ id: s.id, title: s.title })),
+        slides:     state.slides.map((s) => ({ id: s.id, title: s.title, width: s.width, height: s.height, aspect_ratio: s.aspect_ratio })),
         sentences:  state.sents,
         highlights: state.hls,
         settings:   { detail: state.detail, level: state.level, mode: state.appMode },
         operation_logs: state.opLogs,
+        research_snapshot: research,
       };
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
       const a = document.createElement("a");
@@ -39,6 +68,7 @@ export default function ExportPanel({ state, dispatch, addToast }) {
 
     // ── 操作ログ（フロントのみ） ──
     if (type === "log") {
+      const research = await persistResearchSession("export_log");
       const data = {
         exported_at: new Date().toISOString(),
         mode: state.appMode,
@@ -49,6 +79,7 @@ export default function ExportPanel({ state, dispatch, addToast }) {
           logs: state.opLogs.length,
         },
         operation_logs: state.opLogs,
+        research_snapshot: research,
       };
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
       const a = document.createElement("a");
@@ -60,6 +91,7 @@ export default function ExportPanel({ state, dispatch, addToast }) {
 
     // ── 台本テキスト（フロントのみ） ──
     if (type === "script") {
+      await persistResearchSession("export_script");
       const txt = state.sents.map((s) => `[${fmt(s.start_sec)}-${fmt(s.end_sec)}] ${s.text}`).join("\n");
       const blob = new Blob([txt], { type: "text/plain;charset=utf-8" });
       const a = document.createElement("a");
@@ -73,6 +105,7 @@ export default function ExportPanel({ state, dispatch, addToast }) {
     addToast("in", "⏳ 生成中...");
     dispatch({ type: "APP_LOG", message: `メディア書き出しを開始しました（type=${type}）`, meta: { type: "export_start", export_type: type } });
     try {
+      const research = buildResearchSnapshot(state, `export_${type}`);
       const res = await fetch(`${API_URL}/api/export`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -82,12 +115,18 @@ export default function ExportPanel({ state, dispatch, addToast }) {
           slides: state.slides,
           sentences: state.sents,
           highlights: state.hls,
+          operation_logs: state.opLogs,
+          session_id: state.sessionId,
           source_cache_key: state.genRef?.cache_key ?? null,
           source_material_name: state.genRef?.material_name ?? null,
           source_output_root_name: state.genRef?.output_root_name ?? null,
+          generation_ref: state.genRef ?? {},
+          research,
           settings: {
             detail: DETAIL_VALS[state.detail],
             difficulty: DIFF_VALS[state.level],
+            preview_mode: state.prevMode,
+            play_speed: state.playSpeed,
           },
         }),
       });

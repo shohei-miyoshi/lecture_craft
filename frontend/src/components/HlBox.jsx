@@ -83,7 +83,7 @@ export default function HlBox({ hl, isSel, isActive, isPlaying, wrapRef, dispatc
   };
 
   return (
-    <div onMouseDown={onMoveStart} style={{
+    <div data-hl-interactive="1" onMouseDown={onMoveStart} style={{
       position: "absolute",
       left: hl.x + "%", top: hl.y + "%", width: hl.w + "%", height: hl.h + "%",
       border: `${borderWidth}px solid ${c}`,
@@ -103,14 +103,14 @@ export default function HlBox({ hl, isSel, isActive, isPlaying, wrapRef, dispatc
       )}
       {/* 削除ボタン（停止中・選択時のみ） */}
       {isSel && !isPlaying && (
-        <div onClick={(e) => { e.stopPropagation(); dispatch({ type: "RM_HL_ID", v: hl.id }); }}
+        <div data-hl-interactive="1" onClick={(e) => { e.stopPropagation(); dispatch({ type: "RM_HL_ID", v: hl.id }); }}
           style={{ position: "absolute", top: -17, right: 0, width: 16, height: 16, background: "var(--rdd)", border: "1px solid var(--rd)", borderRadius: 3, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, color: "var(--rd)", cursor: "pointer" }}>
           ×
         </div>
       )}
       {/* 8方向リサイズハンドル（停止中・選択時のみ） */}
       {isSel && !isPlaying && Object.entries(HANDLE_POS).map(([dir, pos]) => (
-        <div key={dir} data-rh={dir} onMouseDown={(e) => onResizeStart(e, dir)}
+        <div key={dir} data-hl-interactive="1" data-rh={dir} onMouseDown={(e) => onResizeStart(e, dir)}
           style={{ position: "absolute", width: 10, height: 10, background: "var(--sur)", border: `2px solid ${c}`, borderRadius: "50%", zIndex: 20, ...pos }} />
       ))}
     </div>

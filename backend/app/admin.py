@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List
 
-from .cache import API_EVENT_ROOT, API_JOB_ROOT
+from .cache import API_EVENT_ROOT, API_JOB_ROOT, RESEARCH_SESSION_ROOT
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -16,6 +16,7 @@ EXPERIMENT_RUNS_ROOT = PROJECT_ROOT / "experiments" / "runs"
 def build_admin_overview(limit: int = 12) -> Dict[str, Any]:
     jobs = _load_job_snapshots()
     exports = _load_export_events()
+    research_sessions = _load_research_sessions()
     experiments = _load_experiment_runs(limit=limit)
 
     now = datetime.now()
@@ -35,9 +36,22 @@ def build_admin_overview(limit: int = 12) -> Dict[str, Any]:
     )
     status_counter = Counter(str(job.get("status") or "unknown") for job in jobs)
     export_counter = Counter(str(event.get("export_type") or "unknown") for event in exports)
+    research_trigger_counter = Counter(str(session.get("trigger") or "unknown") for session in research_sessions)
 
     completed_jobs = [job for job in jobs if job.get("status") == "completed"]
     failed_jobs = [job for job in jobs if job.get("status") == "failed"]
+
+    research_summary_totals = {
+        "highlights_modified": sum(_research_summary_value(session, "highlights_modified") for session in research_sessions),
+        "highlights_accepted": sum(_research_summary_value(session, "highlights_accepted") for session in research_sessions),
+        "highlights_removed": sum(_research_summary_value(session, "highlights_removed") for session in research_sessions),
+        "highlights_added": sum(_research_summary_value(session, "highlights_added") for session in research_sessions),
+        "sentences_modified": sum(_research_summary_value(session, "sentences_modified") for session in research_sessions),
+        "sentences_text_modified": sum(_research_summary_value(session, "sentences_text_modified") for session in research_sessions),
+        "sentences_timing_modified": sum(_research_summary_value(session, "sentences_timing_modified") for session in research_sessions),
+        "sentences_removed": sum(_research_summary_value(session, "sentences_removed") for session in research_sessions),
+        "sentences_added": sum(_research_summary_value(session, "sentences_added") for session in research_sessions),
+    }
 
     return {
         "generated_at": now.isoformat(timespec="seconds"),
@@ -52,14 +66,21 @@ def build_admin_overview(limit: int = 12) -> Dict[str, Any]:
             "deduplicated_jobs": sum(1 for job in jobs if job.get("deduplicated")),
             "exports_total": len(exports),
             "exports_last_7d": len(export_7d),
+            "research_sessions_total": len(research_sessions),
         },
         "breakdowns": {
             "jobs_by_mode": _counter_payload(mode_counter),
             "jobs_by_status": _counter_payload(status_counter),
             "exports_by_type": _counter_payload(export_counter),
+            "research_by_trigger": _counter_payload(research_trigger_counter),
         },
         "recent_jobs": jobs[:limit],
         "recent_exports": exports[:limit],
+        "research": {
+            "total_sessions": len(research_sessions),
+            "summary_totals": research_summary_totals,
+            "recent_sessions": research_sessions[:limit],
+        },
         "experiments": {
             "total_runs": len(experiments),
             "completed_runs": sum(1 for run in experiments if run.get("completed")),
@@ -91,6 +112,18 @@ def _load_export_events() -> List[Dict[str, Any]]:
             data["snapshot_path"] = str(path)
             events.append(data)
     return events
+
+
+def _load_research_sessions() -> List[Dict[str, Any]]:
+    if not RESEARCH_SESSION_ROOT.exists():
+        return []
+    sessions: List[Dict[str, Any]] = []
+    for path in sorted(RESEARCH_SESSION_ROOT.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
+        data = _load_json(path)
+        if isinstance(data, dict):
+            data["snapshot_path"] = str(path)
+            sessions.append(data)
+    return sessions
 
 
 def _load_experiment_runs(limit: int) -> List[Dict[str, Any]]:
@@ -129,6 +162,16 @@ def _load_json(path: Path) -> Any:
 
 def _counter_payload(counter: Counter) -> List[Dict[str, Any]]:
     return [{"label": label, "count": count} for label, count in counter.most_common()]
+
+
+def _research_summary_value(session: Dict[str, Any], key: str) -> int:
+    research = session.get("research")
+    summary = research.get("summary") if isinstance(research, dict) else None
+    value = summary.get(key) if isinstance(summary, dict) else 0
+    try:
+        return int(value or 0)
+    except Exception:
+        return 0
 
 
 def _parse_dt(value: Any) -> datetime:

@@ -10,8 +10,8 @@ from fastapi.responses import JSONResponse
 
 from .admin import build_admin_overview
 from .jobs import get_job_manager
-from .models import ExportRequest, GenerateRequest
-from .service import ApiError, export_media
+from .models import ExportRequest, GenerateRequest, ResearchSessionRequest
+from .service import ApiError, export_media, save_research_session
 
 
 app = FastAPI(title="Kenkyu Backend API")
@@ -83,6 +83,11 @@ def job_status_endpoint(job_id: str):
 @app.get("/api/admin/overview")
 def admin_overview_endpoint(limit: int = 12):
     return build_admin_overview(limit=max(1, min(limit, 50)))
+
+
+@app.post("/api/research/session")
+def research_session_endpoint(req: ResearchSessionRequest):
+    return save_research_session(req)
 
 
 @app.post("/api/export")

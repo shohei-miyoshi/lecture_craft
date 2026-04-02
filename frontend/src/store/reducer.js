@@ -13,6 +13,8 @@ export const INITIAL_STATE = {
   totDur:    0,
   generated: false,
   genRef:    null,
+  sessionId: null,
+  baseline:  null,
 
   // ナビゲーション
   curSl:    0,
@@ -43,9 +45,11 @@ export const INITIAL_STATE = {
 
   // 操作ログ
   opLogs:    [],
+  studyEvents: [],
 };
 
 const MAX_OP_LOGS = 300;
+const MAX_STUDY_EVENTS = 2000;
 
 function makeLog(message, meta = {}) {
   return {
@@ -66,6 +70,75 @@ function shortText(text, n = 36) {
   return s.length <= n ? s : `${s.slice(0, n).trimEnd()}…`;
 }
 
+function makeSessionId() {
+  return `sess_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function clonePlain(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function sanitizeSlideMeta(slide) {
+  return {
+    id: slide?.id ?? null,
+    title: slide?.title ?? "",
+    width: slide?.width ?? null,
+    height: slide?.height ?? null,
+    aspect_ratio: slide?.aspect_ratio ?? null,
+    backend_mode: slide?.backend_mode ?? null,
+    backend_detail: slide?.backend_detail ?? null,
+    backend_difficulty: slide?.backend_difficulty ?? null,
+  };
+}
+
+function sanitizeSentence(sentence) {
+  return {
+    id: sentence?.id ?? null,
+    slide_idx: sentence?.slide_idx ?? 0,
+    text: sentence?.text ?? "",
+    start_sec: sentence?.start_sec ?? 0,
+    end_sec: sentence?.end_sec ?? 0,
+  };
+}
+
+function sanitizeHighlight(highlight) {
+  return {
+    id: highlight?.id ?? null,
+    sid: highlight?.sid ?? null,
+    slide_idx: highlight?.slide_idx ?? 0,
+    kind: highlight?.kind ?? "marker",
+    x: highlight?.x ?? 0,
+    y: highlight?.y ?? 0,
+    w: highlight?.w ?? 0,
+    h: highlight?.h ?? 0,
+  };
+}
+
+function buildBaseline(data, appMode) {
+  return {
+    created_at: new Date().toISOString(),
+    mode: appMode,
+    slide_meta: (data.slides ?? []).map(sanitizeSlideMeta),
+    sentences: (data.sentences ?? []).map(sanitizeSentence),
+    highlights: (data.highlights ?? []).map(sanitizeHighlight),
+    generation_ref: data.generation_ref ?? null,
+  };
+}
+
+function makeStudyEvent(kind, payload = {}) {
+  return {
+    id: `evt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    at: new Date().toISOString(),
+    kind,
+    payload: clonePlain(payload),
+  };
+}
+
+function appendStudyEvent(events, event) {
+  const next = [...(events ?? []), event];
+  return next.slice(-MAX_STUDY_EVENTS);
+}
+
 export function reducer(state, action) {
   switch (action.type) {
 
@@ -78,6 +151,8 @@ export function reducer(state, action) {
       const appMode = action.d.mode ?? state.appMode;
       const prevMode = appMode === "audio" ? "audio"
         : appMode === "video" ? "plain" : "hl";
+      const baseline = buildBaseline(action.d, appMode);
+      const sessionId = makeSessionId();
       return {
         ...state,
         slides:    action.d.slides ?? [],
@@ -93,10 +168,23 @@ export function reducer(state, action) {
         curT:      0,
         playing:   false,
         prevMode,
+        sessionId,
+        baseline,
         opLogs:    appendLog(
           state.opLogs,
           `講義データを読み込みました（slides=${(action.d.slides ?? []).length}, sentences=${sents.length}, mode=${appMode}）`,
           { type: "load", mode: appMode, slides: (action.d.slides ?? []).length, sentences: sents.length },
+        ),
+        studyEvents: appendStudyEvent(
+          [],
+          makeStudyEvent("session_loaded", {
+            session_id: sessionId,
+            mode: appMode,
+            slide_count: (action.d.slides ?? []).length,
+            sentence_count: sents.length,
+            highlight_count: (action.d.highlights ?? []).length,
+            generation_ref: action.d.generation_ref ?? null,
+          }),
         ),
       };
     }
@@ -134,6 +222,15 @@ export function reducer(state, action) {
           `ハイライトを設定しました（slide=${sent.slide_idx + 1}, kind=${action.kind}）`,
           { type: "highlight_add", sid: action.sid, kind: action.kind, slide_idx: sent.slide_idx },
         ),
+        studyEvents: appendStudyEvent(
+          state.studyEvents,
+          makeStudyEvent("highlight_apply", {
+            sentence_id: action.sid,
+            slide_idx: sent.slide_idx,
+            before: sanitizeHighlight(state.hls.find((h) => h.sid === action.sid)),
+            after: sanitizeHighlight(newHl),
+          }),
+        ),
       };
     }
 
@@ -150,6 +247,16 @@ export function reducer(state, action) {
               { type: "highlight_remove", sid: action.v, slide_idx: removed.slide_idx },
             )
           : state.opLogs,
+        studyEvents: removed
+          ? appendStudyEvent(
+              state.studyEvents,
+              makeStudyEvent("highlight_remove", {
+                sentence_id: action.v,
+                slide_idx: removed.slide_idx,
+                before: sanitizeHighlight(removed),
+              }),
+            )
+          : state.studyEvents,
       };
     }
 
@@ -167,10 +274,21 @@ export function reducer(state, action) {
               { type: "highlight_remove", id: action.v, slide_idx: removed.slide_idx },
             )
           : state.opLogs,
+        studyEvents: removed
+          ? appendStudyEvent(
+              state.studyEvents,
+              makeStudyEvent("highlight_remove", {
+                highlight_id: action.v,
+                slide_idx: removed.slide_idx,
+                before: sanitizeHighlight(removed),
+              }),
+            )
+          : state.studyEvents,
       };
       }
 
-    case "SET_HL_KIND":
+    case "SET_HL_KIND": {
+      const prev = state.hls.find((h) => h.id === action.id);
       return {
         ...state,
         hls: state.hls.map((h) => (h.id === action.id ? { ...h, kind: action.kind } : h)),
@@ -179,10 +297,24 @@ export function reducer(state, action) {
           `ハイライト種別を変更しました（kind=${action.kind}）`,
           { type: "highlight_kind", id: action.id, kind: action.kind },
         ),
+        studyEvents: prev
+          ? appendStudyEvent(
+              state.studyEvents,
+              makeStudyEvent("highlight_kind", {
+                highlight_id: action.id,
+                slide_idx: prev.slide_idx,
+                before: sanitizeHighlight(prev),
+                after: sanitizeHighlight({ ...prev, kind: action.kind }),
+              }),
+            )
+          : state.studyEvents,
       };
+    }
 
     case "UPD_HL": {
       const { id, x, y, w, hv } = action;
+      const prev = state.hls.find((h) => h.id === id);
+      const nextHl = prev ? { ...prev, x, y, w, h: hv } : null;
       return {
         ...state,
         hls: state.hls.map((h) => (h.id === id ? { ...h, x, y, w, h: hv } : h)),
@@ -191,26 +323,45 @@ export function reducer(state, action) {
           "ハイライト位置を更新しました",
           { type: "highlight_update", id, x, y, w, h: hv },
         ),
+        studyEvents: prev && nextHl
+          ? appendStudyEvent(
+              state.studyEvents,
+              makeStudyEvent("highlight_update", {
+                highlight_id: id,
+                slide_idx: prev.slide_idx,
+                before: sanitizeHighlight(prev),
+                after: sanitizeHighlight(nextHl),
+              }),
+            )
+          : state.studyEvents,
       };
     }
 
     // ── 台本操作 ──
     case "ADD_SENT": {
       const id = `s_${Date.now()}`;
+      const newSent = {
+        id,
+        slide_idx: state.appMode === "audio" ? 0 : state.curSl,
+        text:      "（新しい文）",
+        start_sec: state.totDur,
+        end_sec:   state.totDur + 3,
+      };
       return {
         ...state,
-        sents: [...state.sents, {
-          id,
-          slide_idx: state.appMode === "audio" ? 0 : state.curSl,
-          text:      "（新しい文）",
-          start_sec: state.totDur,
-          end_sec:   state.totDur + 3,
-        }],
+        sents: [...state.sents, newSent],
         totDur: state.totDur + 3,
         opLogs: appendLog(
           state.opLogs,
           `文を追加しました（slide=${(state.appMode === "audio" ? 1 : state.curSl + 1)}）`,
           { type: "sentence_add", slide_idx: state.appMode === "audio" ? 0 : state.curSl },
+        ),
+        studyEvents: appendStudyEvent(
+          state.studyEvents,
+          makeStudyEvent("sentence_add", {
+            slide_idx: newSent.slide_idx,
+            after: sanitizeSentence(newSent),
+          }),
         ),
       };
     }
@@ -229,6 +380,16 @@ export function reducer(state, action) {
               { type: "sentence_delete", id: action.v, slide_idx: removed.slide_idx },
             )
           : state.opLogs,
+        studyEvents: removed
+          ? appendStudyEvent(
+              state.studyEvents,
+              makeStudyEvent("sentence_delete", {
+                sentence_id: action.v,
+                slide_idx: removed.slide_idx,
+                before: sanitizeSentence(removed),
+              }),
+            )
+          : state.studyEvents,
       };
     }
 
@@ -244,6 +405,17 @@ export function reducer(state, action) {
               { type: "sentence_text", id: action.id, slide_idx: prev.slide_idx },
             )
           : state.opLogs,
+        studyEvents: prev && prev.text !== action.text
+          ? appendStudyEvent(
+              state.studyEvents,
+              makeStudyEvent("sentence_text", {
+                sentence_id: action.id,
+                slide_idx: prev.slide_idx,
+                before: sanitizeSentence(prev),
+                after: sanitizeSentence({ ...prev, text: action.text }),
+              }),
+            )
+          : state.studyEvents,
       };
     }
 
@@ -263,6 +435,17 @@ export function reducer(state, action) {
               { type: "sentence_time", id: action.id, slide_idx: prev.slide_idx, start_sec: action.start_sec, end_sec: action.end_sec },
             )
           : state.opLogs,
+        studyEvents: prev
+          ? appendStudyEvent(
+              state.studyEvents,
+              makeStudyEvent("sentence_time", {
+                sentence_id: action.id,
+                slide_idx: prev.slide_idx,
+                before: sanitizeSentence(prev),
+                after: sanitizeSentence({ ...prev, start_sec: action.start_sec, end_sec: action.end_sec }),
+              }),
+            )
+          : state.studyEvents,
       };
     }
 

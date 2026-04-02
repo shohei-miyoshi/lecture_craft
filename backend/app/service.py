@@ -26,13 +26,14 @@ if str(SRC_ROOT) not in sys.path:
 from .cache import (
     GenerateCachePlan,
     event_snapshot_path,
+    research_snapshot_path,
     build_generate_cache_plan,
     decode_pdf_base64,
     get_named_lock,
     load_cached_generate_response,
     write_cached_generate_response,
 )
-from .models import ExportRequest, GenerateRequest
+from .models import ExportRequest, GenerateRequest, ResearchSessionRequest
 from auto_lecture import config as auto_config
 from auto_lecture.audio_only_lecture import run_audio_only_lecture
 from auto_lecture.gpt_client import create_client
@@ -169,13 +170,16 @@ def export_media(req: ExportRequest) -> FileResponse:
     try:
         if export_type == "audio":
             out_path = export_audio(req)
+            save_research_session_from_export(req, trigger=f"export_{export_type}", status="completed", output_path=out_path)
             log_export_event(req, status="completed", output_path=out_path)
             return FileResponse(out_path, media_type="audio/mpeg", filename="lecture.mp3")
 
         out_path = export_video(req, include_highlights=(export_type == "video_highlight"))
+        save_research_session_from_export(req, trigger=f"export_{export_type}", status="completed", output_path=out_path)
         log_export_event(req, status="completed", output_path=out_path)
         return FileResponse(out_path, media_type="video/mp4", filename="lecture.mp4")
     except Exception as exc:
+        save_research_session_from_export(req, trigger=f"export_{export_type}", status="failed", error_message=str(exc))
         log_export_event(req, status="failed", error_message=str(exc))
         raise
 
@@ -409,6 +413,9 @@ def build_frontend_slides(
                 "title": guess_slide_title(paths, slide.index),
                 "color": slide_color(slide.index),
                 "image_base64": encode_file_base64(slide.path),
+                "width": slide.width,
+                "height": slide.height,
+                "aspect_ratio": round(slide.width / max(slide.height, 1), 6),
                 "backend_mode": mode,
                 "backend_detail": detail,
                 "backend_difficulty": difficulty,
@@ -811,14 +818,77 @@ def log_export_event(
         "source_cache_key": req.source_cache_key,
         "source_material_name": req.source_material_name,
         "source_output_root_name": req.source_output_root_name,
+        "session_id": req.session_id,
         "slide_count": len(req.slides),
         "sentence_count": len(req.sentences),
         "highlight_count": len(req.highlights),
+        "operation_log_count": len(req.operation_logs),
+        "research_summary": req.research.get("summary") if isinstance(req.research, dict) else {},
         "output_path": str(output_path) if output_path else None,
         "error_message": error_message,
     }
     try:
         path = event_snapshot_path("export")
         path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def save_research_session(req: ResearchSessionRequest) -> Dict[str, Any]:
+    session_id = str(req.session_id or f"session_{timestamp_slug()}_{short_id()}")
+    payload = {
+        "saved_at": datetime.now().isoformat(timespec="seconds"),
+        "session_id": session_id,
+        "trigger": req.trigger,
+        "mode": req.mode,
+        "generation_ref": req.generation_ref,
+        "settings": req.settings,
+        "operation_logs": req.operation_logs,
+        "research": req.research,
+    }
+    path = research_snapshot_path(session_id, req.trigger)
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    return {
+        "ok": True,
+        "session_id": session_id,
+        "snapshot_path": str(path),
+        "summary": req.research.get("summary") if isinstance(req.research, dict) else {},
+    }
+
+
+def save_research_session_from_export(
+    req: ExportRequest,
+    *,
+    trigger: str,
+    status: str,
+    output_path: Optional[Path] = None,
+    error_message: Optional[str] = None,
+) -> None:
+    if not req.research and not req.operation_logs:
+        return
+    try:
+        save_research_session(
+            ResearchSessionRequest(
+                session_id=req.session_id,
+                trigger=trigger,
+                mode=req.mode,
+                generation_ref=req.generation_ref or {
+                    "cache_key": req.source_cache_key,
+                    "material_name": req.source_material_name,
+                    "output_root_name": req.source_output_root_name,
+                },
+                operation_logs=req.operation_logs,
+                research={
+                    **(req.research or {}),
+                    "export": {
+                        "type": req.type,
+                        "status": status,
+                        "output_path": str(output_path) if output_path else None,
+                        "error_message": error_message,
+                    },
+                },
+                settings=req.settings.model_dump(),
+            )
+        )
     except Exception:
         pass

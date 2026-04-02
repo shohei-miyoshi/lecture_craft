@@ -21,7 +21,15 @@ export const toB64 = (file) =>
 export function makeDemo() {
   const cols   = ["#1a2340", "#1f2d1f", "#2d1f1f", "#1f1f2d", "#2d2820"];
   const titles = ["パターン認識とは？", "特徴量の設計", "分類器の評価", "音声認識への応用", "まとめ"];
-  const slides = titles.map((t, i) => ({ id: `sl${i}`, title: t, color: cols[i], image_base64: null }));
+  const slides = titles.map((t, i) => ({
+    id: `sl${i}`,
+    title: t,
+    color: cols[i],
+    image_base64: null,
+    width: 1600,
+    height: 900,
+    aspect_ratio: 16 / 9,
+  }));
   const sentences = [
     { id: "s1",  slide_idx: 0, text: "パターン認識とは、コンピュータにパターンの同一性と相違性を理解させることです。", start_sec: 0,  end_sec: 5  },
     { id: "s2",  slide_idx: 0, text: "たとえばリンゴとミカンを考えると、果物という観点では同じ分類になりますが、色や形では異なります。", start_sec: 5,  end_sec: 11 },
