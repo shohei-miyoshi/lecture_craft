@@ -82,9 +82,18 @@ def generate_media(
     req: GenerateRequest,
     progress_callback: Optional[Callable[[int, str], None]] = None,
 ) -> Dict[str, Any]:
+    last_progress = [0]
+    last_message = ["待機中"]
+
     def report(progress: int, message: str) -> None:
+        last_progress[0] = progress
+        last_message[0] = message
         if progress_callback is not None:
             progress_callback(progress, message)
+
+    def check_cancel() -> None:
+        if progress_callback is not None:
+            progress_callback(last_progress[0], last_message[0])
 
     report(5, "生成計画を準備しています")
     level = LEVEL_MAP[req.difficulty]
@@ -139,13 +148,14 @@ def generate_media(
             from scripts import run_all
 
             ensure_lp_outputs(paths, report)
-            report(55, "動画パイプラインを実行しています")
             run_all.run_pipeline(
                 teaching_material_file_name=material_name,
                 material_root=MATERIAL_ROOT,
                 level=level,
                 detail=detail,
                 output_root_name=output_root_name,
+                progress_callback=report,
+                cancel_checker=check_cancel,
             )
             report(90, "生成結果を整形しています")
             response = build_visual_generate_response(paths, req.mode, req.detail, req.difficulty)

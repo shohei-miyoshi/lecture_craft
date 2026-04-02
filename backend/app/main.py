@@ -80,6 +80,11 @@ def job_status_endpoint(job_id: str):
     return get_job_manager().get_job(job_id)
 
 
+@app.post("/api/jobs/{job_id}/cancel")
+def job_cancel_endpoint(job_id: str):
+    return JSONResponse(status_code=202, content=get_job_manager().cancel_job(job_id))
+
+
 @app.get("/api/admin/overview")
 def admin_overview_endpoint(limit: int = 12):
     return build_admin_overview(limit=max(1, min(limit, 50)))

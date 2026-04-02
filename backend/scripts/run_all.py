@@ -10,7 +10,7 @@ import os
 import time
 from pathlib import Path
 from datetime import datetime
-from typing import Optional, Any, Dict, List, Iterable, Tuple
+from typing import Optional, Any, Dict, List, Iterable, Tuple, Callable
 
 THIS_FILE = Path(__file__).resolve()
 PROJECT_ROOT = THIS_FILE.parents[1]
@@ -581,8 +581,18 @@ def run_pipeline(
     run_id: str = "",
     cond_id: str = "",
     emit_meta_path: Optional[str] = None,
+    progress_callback: Optional[Callable[[int, str], None]] = None,
+    cancel_checker: Optional[Callable[[], None]] = None,
 ) -> None:
     os.environ.setdefault("PYTHONUTF8", "1")
+
+    def report(progress: int, message: str) -> None:
+        if progress_callback is not None:
+            progress_callback(progress, message)
+
+    def check_cancel() -> None:
+        if cancel_checker is not None:
+            cancel_checker()
 
     # ✅ run_id+cond_id が揃っているときは “安定パス” を優先
     if run_id and cond_id:
@@ -626,9 +636,13 @@ def run_pipeline(
     explanations = None
     try:
         # Step0前に LP snapshot をコピー
+        check_cancel()
+        report(58, "動画パイプラインを初期化しています")
         copy_lp_output_snapshot(paths)
 
         if not skip_deck_scan:
+            check_cancel()
+            report(62, "スライド全体の構成を解析しています")
             step_deck_scan(paths, level=level, detail=detail)
         else:
             log("Step0: deck_scan skip")
@@ -645,6 +659,8 @@ def run_pipeline(
             return
 
         if not skip_script:
+            check_cancel()
+            report(70, "各スライドの講義台本を生成しています")
             explanations = step_lecture_script(paths, level=level, detail=detail)
         else:
             log("Step1: lecture_script skip")
@@ -661,6 +677,8 @@ def run_pipeline(
             return
 
         if not skip_animation_assignment:
+            check_cancel()
+            report(78, "台本とハイライト演出を対応付けています")
             step_animation_assignment(paths, explanations)
         else:
             log("Step2: animation_assignment skip")
@@ -677,6 +695,8 @@ def run_pipeline(
             return
 
         if not skip_tts:
+            check_cancel()
+            report(84, "音声を合成しています")
             step_tts_generation(paths, explanations)
         else:
             log("Step3: tts skip")
@@ -693,11 +713,15 @@ def run_pipeline(
             return
 
         if not skip_runner:
+            check_cancel()
+            report(90, "各スライドの動画を生成しています")
             step_runner_from_mapping(paths)
         else:
             log("Step4: runner skip")
 
         if not skip_concat:
+            check_cancel()
+            report(96, "最終動画を連結しています")
             step_lecture_concat(paths)
         else:
             log("Step5: concat skip")

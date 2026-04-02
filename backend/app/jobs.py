@@ -32,6 +32,10 @@ def _job_worker_count() -> int:
         return 1
 
 
+class JobCancelledError(Exception):
+    pass
+
+
 @dataclass
 class JobRecord:
     job_id: str
@@ -46,6 +50,8 @@ class JobRecord:
     error: Optional[Dict[str, str]] = None
     cache_hit: bool = False
     deduplicated: bool = False
+    cancel_requested: bool = False
+    cancelled_at: Optional[str] = None
     payload: Dict[str, Any] = field(default_factory=dict)
 
 
@@ -161,11 +167,25 @@ class JobManager:
                 raise ApiError(404, "JOB_NOT_FOUND", f"job not found: {job_id}")
         return self._public_job_payload(job_id)
 
+    def cancel_job(self, job_id: str) -> Dict[str, Any]:
+        with self._jobs_lock:
+            record = self.jobs.get(job_id)
+            if record is None:
+                raise ApiError(404, "JOB_NOT_FOUND", f"job not found: {job_id}")
+            if record.status in {"completed", "failed", "cancelled"}:
+                return self._public_job_payload(job_id)
+            record.cancel_requested = True
+            record.message = "生成停止をリクエストしました"
+            record.updated_at = _now_iso()
+        self._persist_job(record)
+        return self._public_job_payload(job_id)
+
     def _worker_loop(self, _: int) -> None:
         while True:
             job_id, req_payload = self._queue.get()
             request_key: Optional[str] = None
             try:
+                self._raise_if_cancel_requested(job_id)
                 req = GenerateRequest.model_validate(req_payload)
                 try:
                     pdf_bytes = decode_pdf_base64(req.pdf_base64)
@@ -181,16 +201,13 @@ class JobManager:
                     message="生成ジョブを開始しました",
                     request_key=request_key,
                 )
+                self._raise_if_cancel_requested(job_id)
 
                 result = generate_media(
                     req,
-                    progress_callback=lambda progress, message: self._update_job(
-                        job_id,
-                        status="running",
-                        progress=progress,
-                        message=message,
-                    ),
+                    progress_callback=lambda progress, message: self._report_progress(job_id, progress, message),
                 )
+                self._raise_if_cancel_requested(job_id)
 
                 self._update_job(
                     job_id,
@@ -200,6 +217,8 @@ class JobManager:
                     result_path=str(plan.response_cache_path),
                     cache_hit=bool(result.get("generation_ref", {}).get("cache_hit", False)),
                 )
+            except JobCancelledError:
+                self._mark_cancelled(job_id)
             except ApiError as exc:
                 self._update_job(
                     job_id,
@@ -270,6 +289,8 @@ class JobManager:
     ) -> None:
         with self._jobs_lock:
             record = self.jobs[job_id]
+            if record.status == "cancelled" and status not in {None, "cancelled"}:
+                return
             if status is not None:
                 record.status = status
             if progress is not None:
@@ -300,6 +321,8 @@ class JobManager:
                 "updated_at": record.updated_at,
                 "cache_hit": record.cache_hit,
                 "deduplicated": record.deduplicated,
+                "cancel_requested": record.cancel_requested,
+                "cancelled_at": record.cancelled_at,
                 "payload": record.payload,
             }
             result_path = record.result_path
@@ -338,6 +361,8 @@ class JobManager:
                     "error": record.error,
                     "cache_hit": record.cache_hit,
                     "deduplicated": record.deduplicated,
+                    "cancel_requested": record.cancel_requested,
+                    "cancelled_at": record.cancelled_at,
                     "payload": record.payload,
                 },
                 ensure_ascii=False,
@@ -345,6 +370,35 @@ class JobManager:
             ),
             encoding="utf-8",
         )
+
+    def _is_cancel_requested(self, job_id: str) -> bool:
+        with self._jobs_lock:
+            record = self.jobs[job_id]
+            return bool(record.cancel_requested or record.status == "cancelled")
+
+    def _raise_if_cancel_requested(self, job_id: str) -> None:
+        if self._is_cancel_requested(job_id):
+            raise JobCancelledError(job_id)
+
+    def _report_progress(self, job_id: str, progress: int, message: str) -> None:
+        self._raise_if_cancel_requested(job_id)
+        self._update_job(
+            job_id,
+            status="running",
+            progress=progress,
+            message=message,
+        )
+        self._raise_if_cancel_requested(job_id)
+
+    def _mark_cancelled(self, job_id: str) -> None:
+        with self._jobs_lock:
+            record = self.jobs[job_id]
+            record.status = "cancelled"
+            record.cancel_requested = True
+            record.cancelled_at = _now_iso()
+            record.message = "生成を停止しました"
+            record.updated_at = record.cancelled_at
+        self._persist_job(record)
 
 
 _JOB_MANAGER: Optional[JobManager] = None

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { deleteProject, listProjects, loadProject } from "../utils/projectStore.js";
 
 function timeText(value) {
@@ -45,16 +45,33 @@ function metricBlock(label, value, accent) {
   );
 }
 
+function isPdfFile(file) {
+  return Boolean(file && file.type === "application/pdf");
+}
+
 export default function ProjectHome({
   onCreateProject,
   onOpenProject,
   onResumeEditing,
   currentProject,
   requestConfirm,
+  addToast,
 }) {
   const [refreshKey, setRefreshKey] = useState(0);
+  const [draggingPdf, setDraggingPdf] = useState(false);
+  const [pendingPdf, setPendingPdf] = useState(null);
+  const fileInputRef = useRef(null);
   const projects = useMemo(() => listProjects(), [refreshKey]);
   const currentData = currentProject?.data ?? null;
+
+  const handlePendingPdf = (file) => {
+    if (!isPdfFile(file)) {
+      if (file) addToast?.("er", "PDF ファイルを選択してください");
+      return;
+    }
+    setPendingPdf(file);
+    addToast?.("in", `📑 ${file.name}`);
+  };
 
   const handleDelete = (projectId) => {
     const project = loadProject(projectId);
@@ -68,6 +85,10 @@ export default function ProjectHome({
         setRefreshKey((v) => v + 1);
       },
     });
+  };
+
+  const startProjectWithPdf = () => {
+    onCreateProject?.(pendingPdf);
   };
 
   return (
@@ -106,31 +127,90 @@ export default function ProjectHome({
                 研究用の編集ログや書き出しフローも、この入口からまとめて扱えます。
               </div>
 
-              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 18 }}>
-                <button
-                  onClick={onCreateProject}
-                  style={{
-                    padding: "11px 16px",
-                    border: "1px solid rgba(110,193,255,.28)",
-                    background: "var(--ac)",
-                    color: "#fff",
-                    fontSize: 12,
-                    fontWeight: 700,
-                    boxShadow: "0 14px 30px rgba(91,141,239,.24)",
-                  }}
-                >
-                  新しいプロジェクトを作成
-                </button>
+              <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 320px) auto", gap: 14, alignItems: "stretch", marginTop: 18 }}>
                 <div
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    setDraggingPdf(true);
+                  }}
+                  onDragLeave={() => setDraggingPdf(false)}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setDraggingPdf(false);
+                    handlePendingPdf(e.dataTransfer.files?.[0] ?? null);
+                  }}
+                  onClick={() => fileInputRef.current?.click()}
                   style={{
-                    padding: "11px 14px",
-                    background: "rgba(255,255,255,.03)",
-                    color: "var(--ts)",
-                    fontSize: 11,
-                    borderLeft: "2px solid rgba(110,193,255,.24)",
+                    position: "relative",
+                    padding: "16px 16px 14px",
+                    border: `1px dashed ${draggingPdf ? "rgba(110,193,255,.5)" : "rgba(110,193,255,.24)"}`,
+                    background: draggingPdf ? "rgba(91,141,239,.12)" : "rgba(255,255,255,.03)",
+                    cursor: "pointer",
                   }}
                 >
-                  ローカル保存件数: <span style={{ color: "var(--tp)", fontFamily: "var(--fm)" }}>{projects.length}</span>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".pdf,application/pdf"
+                    onChange={(e) => handlePendingPdf(e.target.files?.[0] ?? null)}
+                    style={{ display: "none" }}
+                  />
+                  <div style={{ fontSize: 10, letterSpacing: "1.4px", textTransform: "uppercase", color: "var(--tm)", marginBottom: 7 }}>
+                    講義スライドから開始
+                  </div>
+                  <div style={{ fontFamily: "var(--ff)", fontSize: 18, lineHeight: 1.2, marginBottom: 8 }}>
+                    PDF を選んで新規作成
+                  </div>
+                  <div style={{ fontSize: 11, color: "var(--ts)", lineHeight: 1.7, marginBottom: 10 }}>
+                    クリックまたはドロップで講義スライド PDF を選択し、そのまま編集画面へ進めます。
+                  </div>
+                  <div style={{ fontSize: 11, color: pendingPdf ? "var(--tp)" : "var(--tm)", fontFamily: pendingPdf ? "var(--fm)" : "inherit" }}>
+                    {pendingPdf ? pendingPdf.name : "まだ PDF は選択されていません"}
+                  </div>
+                </div>
+
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-start" }}>
+                  <button
+                    onClick={() => onCreateProject?.()}
+                    style={{
+                      padding: "11px 16px",
+                      border: "1px solid rgba(110,193,255,.22)",
+                      background: "rgba(255,255,255,.05)",
+                      color: "var(--tp)",
+                      fontSize: 12,
+                      fontWeight: 700,
+                    }}
+                  >
+                    空のプロジェクトを作成
+                  </button>
+                  <button
+                    onClick={startProjectWithPdf}
+                    disabled={!pendingPdf}
+                    style={{
+                      padding: "11px 16px",
+                      border: "1px solid rgba(110,193,255,.28)",
+                      background: pendingPdf ? "var(--ac)" : "rgba(91,141,239,.2)",
+                      color: "#fff",
+                      fontSize: 12,
+                      fontWeight: 700,
+                      boxShadow: pendingPdf ? "0 14px 30px rgba(91,141,239,.24)" : "none",
+                      opacity: pendingPdf ? 1 : 0.55,
+                      cursor: pendingPdf ? "pointer" : "not-allowed",
+                    }}
+                  >
+                    この PDF で作成
+                  </button>
+                  <div
+                    style={{
+                      padding: "11px 14px",
+                      background: "rgba(255,255,255,.03)",
+                      color: "var(--ts)",
+                      fontSize: 11,
+                      borderLeft: "2px solid rgba(110,193,255,.24)",
+                    }}
+                  >
+                    ローカル保存件数: <span style={{ color: "var(--tp)", fontFamily: "var(--fm)" }}>{projects.length}</span>
+                  </div>
                 </div>
               </div>
             </div>

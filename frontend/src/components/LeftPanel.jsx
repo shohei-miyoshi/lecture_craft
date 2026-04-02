@@ -9,6 +9,7 @@ const JOB_POLL_MS = 2000;
 export default function LeftPanel({ state, dispatch, pdfFile, setPdfFile, addToast, requestConfirm, requestPrompt, handleReset }) {
   const [drag, setDrag] = useState(false);
   const [projectRefreshKey, setProjectRefreshKey] = useState(0);
+  const [currentJobId, setCurrentJobId] = useState(null);
   const fileInputRef = useRef(null); // リセット後のリセット用
   const projects = useMemo(() => listProjects(), [projectRefreshKey, state.projectMeta]);
 
@@ -20,6 +21,7 @@ export default function LeftPanel({ state, dispatch, pdfFile, setPdfFile, addToa
   };
 
   const startGen = async () => {
+    if (state.status === "proc") return;
     if (!pdfFile) { addToast("er", "PDFをアップロードしてください"); return; }
     dispatch({
       type: "APP_LOG",
@@ -47,6 +49,7 @@ export default function LeftPanel({ state, dispatch, pdfFile, setPdfFile, addToa
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       let job = await res.json();
+      setCurrentJobId(job.job_id);
       dispatch({
         type: "APP_LOG",
         message: `生成ジョブを受け付けました（job_id=${job.job_id}, status=${job.status}）`,
@@ -60,6 +63,20 @@ export default function LeftPanel({ state, dispatch, pdfFile, setPdfFile, addToa
         const pollRes = await fetch(`${API_URL}/api/jobs/${job.job_id}`);
         if (!pollRes.ok) throw new Error(`HTTP ${pollRes.status}`);
         job = await pollRes.json();
+      }
+
+      if (job.status === "cancelled") {
+        dispatch({ type: "SET", k: "status", v: "stop" });
+        dispatch({ type: "SET", k: "statusMsg", v: job.message || "生成を停止しました" });
+        dispatch({ type: "SET", k: "showProg", v: false });
+        dispatch({
+          type: "APP_LOG",
+          message: `生成を停止しました（job_id=${job.job_id}）`,
+          meta: { type: "generate_cancelled", job_id: job.job_id, mode: state.appMode },
+        });
+        addToast("in", "生成を停止しました");
+        setCurrentJobId(null);
+        return;
       }
 
       if (job.status !== "completed" || !job.result) {
@@ -77,6 +94,7 @@ export default function LeftPanel({ state, dispatch, pdfFile, setPdfFile, addToa
         message: `生成が完了しました（backend, mode=${state.appMode}, job_id=${job.job_id}, cache_hit=${job.cache_hit}）`,
         meta: { type: "generate_success", source: "backend", mode: state.appMode, job_id: job.job_id, cache_hit: job.cache_hit },
       });
+      setCurrentJobId(null);
       addToast("ok", "✅ 講義メディアを生成しました");
     } catch (err) {
       console.warn("Backend generate failed:", err.message);
@@ -94,6 +112,7 @@ export default function LeftPanel({ state, dispatch, pdfFile, setPdfFile, addToa
           message: `バックエンド接続に失敗したためデモデータを読み込みました（reason=${err.message}）`,
           meta: { type: "generate_fallback_demo", reason: err.message, mode: state.appMode },
         });
+        setCurrentJobId(null);
         addToast("in", "🔧 バックエンド未接続 — デモデータで表示");
       } else {
         dispatch({ type: "SET", k: "status", v: "err" });
@@ -103,10 +122,41 @@ export default function LeftPanel({ state, dispatch, pdfFile, setPdfFile, addToa
           message: `生成に失敗しました（reason=${err.message ?? "unknown"}）`,
           meta: { type: "generate_error", reason: err.message ?? "unknown", mode: state.appMode },
         });
+        setCurrentJobId(null);
         addToast("er", err.message || "生成に失敗しました");
       }
     }
     setTimeout(() => dispatch({ type: "SET", k: "showProg", v: false }), 800);
+  };
+
+  const stopGeneration = () => {
+    if (!currentJobId || state.status !== "proc") return;
+    requestConfirm({
+      title: "生成を停止",
+      message: "現在の生成ジョブを停止しますか？\n停止すると途中までの結果は破棄され、あとで設定を変えて再生成できます。",
+      confirmLabel: "停止する",
+      confirmColor: "var(--am)",
+      confirmBg: "var(--amd)",
+      confirmBorder: "rgba(232,169,75,.35)",
+      onConfirm: async () => {
+        try {
+          const res = await fetch(`${API_URL}/api/jobs/${currentJobId}/cancel`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+          });
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          dispatch({ type: "SET", k: "statusMsg", v: "生成停止をリクエストしました..." });
+          dispatch({
+            type: "APP_LOG",
+            message: `生成停止をリクエストしました（job_id=${currentJobId}）`,
+            meta: { type: "generate_cancel_requested", job_id: currentJobId, mode: state.appMode },
+          });
+          addToast("in", "生成停止をリクエストしました");
+        } catch (err) {
+          addToast("er", err.message || "生成停止に失敗しました");
+        }
+      },
+    });
   };
 
   const handleSaveProject = () => {
@@ -174,6 +224,7 @@ export default function LeftPanel({ state, dispatch, pdfFile, setPdfFile, addToa
     idle: { background: "var(--s2)",  color: "var(--tm)" },
     proc: { background: "var(--amd)", border: "1px solid rgba(232,169,75,.28)", color: "var(--am)" },
     done: { background: "var(--gd)",  border: "1px solid rgba(76,175,130,.28)",  color: "var(--gr)" },
+    stop: { background: "rgba(255,255,255,.04)", border: "1px solid rgba(255,255,255,.1)", color: "var(--ts)" },
     err:  { background: "var(--rdd)", border: "1px solid rgba(224,91,91,.28)",   color: "var(--rd)" },
   }[state.status];
 
@@ -294,16 +345,54 @@ export default function LeftPanel({ state, dispatch, pdfFile, setPdfFile, addToa
         </div>
 
         {/* ─── 生成ボタン ─── */}
-        <button onClick={startGen} style={{ width: "100%", padding: 9, background: "var(--ac)", border: "none", borderRadius: "var(--r)", color: "#fff", fontFamily: "var(--fb)", fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", gap: 5, marginBottom: 10 }}>
-          ⚡ 講義メディア生成
-        </button>
+        <div style={{ display: "grid", gridTemplateColumns: state.status === "proc" ? "1fr auto" : "1fr", gap: 8, marginBottom: 10 }}>
+          <button
+            onClick={startGen}
+            disabled={state.status === "proc"}
+            style={{
+              width: "100%",
+              padding: 9,
+              background: state.status === "proc" ? "rgba(91,141,239,.36)" : "var(--ac)",
+              border: "none",
+              borderRadius: "var(--r)",
+              color: "#fff",
+              fontFamily: "var(--fb)",
+              fontSize: 12,
+              fontWeight: 600,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 5,
+              cursor: state.status === "proc" ? "not-allowed" : "pointer",
+            }}
+          >
+            ⚡ 講義メディア生成
+          </button>
+          {state.status === "proc" && (
+            <button
+              onClick={stopGeneration}
+              style={{
+                padding: "9px 12px",
+                border: "1px solid rgba(232,169,75,.34)",
+                borderRadius: "var(--r)",
+                background: "var(--amd)",
+                color: "var(--am)",
+                fontSize: 11,
+                fontWeight: 700,
+                whiteSpace: "nowrap",
+              }}
+            >
+              生成停止
+            </button>
+          )}
+        </div>
 
         {/* ─── ステータス ─── */}
         <div style={{ ...statusStyle, padding: "6px 8px", borderRadius: "var(--r)", fontSize: 10, display: "flex", alignItems: "center", gap: 5, marginBottom: 4 }}>
           {state.status === "proc" && (
             <div style={{ width: 9, height: 9, border: "1.5px solid rgba(232,169,75,.22)", borderTopColor: "var(--am)", borderRadius: "50%", animation: "lc-spin .8s linear infinite", flexShrink: 0 }} />
           )}
-          <span>{{ idle: "⏸ ", done: "✅ ", err: "❌ ", proc: "" }[state.status]}{state.statusMsg}</span>
+          <span>{{ idle: "⏸ ", done: "✅ ", err: "❌ ", proc: "", stop: "■ " }[state.status]}{state.statusMsg}</span>
         </div>
         {state.showProg && (
           <div style={{ height: 2, background: "var(--s2)", borderRadius: 1, overflow: "hidden", marginTop: 3 }}>

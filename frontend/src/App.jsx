@@ -69,11 +69,14 @@ export default function App() {
     });
   };
 
-  const handleCreateProject = () => {
+  const handleCreateProject = (nextPdfFile = null) => {
     dispatch({ type: "RESET" });
-    setPdfFile(null);
+    setPdfFile(nextPdfFile);
     setTab("editor");
     setStudioScreen("editor");
+    if (nextPdfFile) {
+      addToast("in", `📑 ${nextPdfFile.name}`);
+    }
   };
 
   const handleOpenProject = (project) => {
@@ -330,6 +333,7 @@ export default function App() {
           onResumeEditing={() => setStudioScreen("editor")}
           currentProject={state.generated ? { name: state.projectMeta?.name ?? "編集中のプロジェクト", data: { slides: state.slides, sentences: state.sents, highlights: state.hls, mode: state.appMode } } : null}
           requestConfirm={requestConfirm}
+          addToast={addToast}
         />
       ) : (
       <div style={{ flex: 1, minHeight: 0, padding: 12, overflow: "hidden" }}>
