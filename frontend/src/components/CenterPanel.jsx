@@ -102,12 +102,6 @@ export default function CenterPanel({ state, dispatch, addToast, requestConfirm 
               "linear-gradient(180deg, rgba(255,255,255,.015), transparent 16%), radial-gradient(circle at 50% 20%, rgba(91,141,239,.08), transparent 36%)",
           }}
         >
-          <div style={{ position: "absolute", top: 14, left: 18, padding: "6px 10px", background: "rgba(19,21,26,.88)", borderLeft: "2px solid var(--ac)", fontSize: 10, color: "var(--ts)", zIndex: 2 }}>
-            入力スライドの比率を維持して表示
-          </div>
-          <div style={{ position: "absolute", right: 18, bottom: 16, fontFamily: "var(--fm)", fontSize: 9, color: "var(--tm)", zIndex: 2 }}>
-            wheel: ページ切替 / ctrl+wheel: 拡大縮小
-          </div>
           <SlideCanvas state={state} dispatch={dispatch} addToast={addToast} requestConfirm={requestConfirm} />
         </div>
       )}

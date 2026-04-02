@@ -11,15 +11,7 @@ function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
 
-function slideAspect(slide) {
-  const width = Number(slide?.width ?? 0);
-  const height = Number(slide?.height ?? 0);
-  if (width > 0 && height > 0) return width / height;
-  if (Number(slide?.aspect_ratio ?? 0) > 0) return Number(slide.aspect_ratio);
-  return 16 / 9;
-}
-
-const CHROME_INSETS = { top: 48, right: 16, bottom: 34, left: 16 };
+const CHROME_INSETS = { top: 46, right: 18, bottom: 26, left: 18 };
 
 function clampPan(nextPan, zoom, baseSize) {
   const extraX = Math.max(0, (baseSize.width * zoom - baseSize.width) / 2);
@@ -40,20 +32,22 @@ export default function SlideCanvas({ state, dispatch, addToast, requestConfirm 
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
-  const [naturalSize, setNaturalSize] = useState({ width: 0, height: 0 });
+  const [naturalSize, setNaturalSize] = useState({ width: 0, height: 0, slideKey: null });
 
   const slide = state.slides[state.curSl];
+  const slideKey = slide?.id ?? slide?.image_base64 ?? `slide-${state.curSl}`;
   const curHls = state.hls.filter((h) => h.slide_idx === state.curSl);
   const actSent = state.sents.find((s) => s.start_sec <= state.curT && state.curT < s.end_sec);
   const showBB = state.appMode === "hl";
-  const imageSize = resolveImageSize(slide, naturalSize);
+  const safeNaturalSize = naturalSize.slideKey === slideKey ? naturalSize : null;
+  const imageSize = resolveImageSize(slide, safeNaturalSize);
   const aspect = imageSize.width / imageSize.height;
-  const imageReady = !slide?.image_base64 || naturalSize.width > 0;
+  const imageReady = Boolean(!slide?.image_base64 || imageSize.width > 0 || imageSize.height > 0);
 
   useEffect(() => {
-    setNaturalSize({ width: 0, height: 0 });
+    setNaturalSize({ width: 0, height: 0, slideKey });
     resetView();
-  }, [state.curSl, slide?.id]);
+  }, [state.curSl, slideKey]);
 
   useEffect(() => {
     if (!viewportRef.current) return undefined;
@@ -302,8 +296,8 @@ export default function SlideCanvas({ state, dispatch, addToast, requestConfirm 
       </div>
 
       <div style={{ position: "absolute", top: 14, right: 14, zIndex: 40, fontFamily: "var(--fm)", fontSize: 10, color: "var(--tm)" }}>
-        {naturalSize.width > 0 && naturalSize.height > 0
-          ? `${naturalSize.width}×${naturalSize.height} | `
+        {safeNaturalSize?.width > 0 && safeNaturalSize?.height > 0
+          ? `${safeNaturalSize.width}×${safeNaturalSize.height} | `
           : ""}
         拡大率 {Math.round(zoom * 100)}%
       </div>
@@ -320,13 +314,14 @@ export default function SlideCanvas({ state, dispatch, addToast, requestConfirm 
       >
         {slide?.image_base64 ? (
           <img
+            key={slideKey}
             src={`data:image/png;base64,${slide.image_base64}`}
             alt={slide.title ?? `slide ${state.curSl + 1}`}
             draggable={false}
             onLoad={(e) => {
               const img = e.currentTarget;
               if (img.naturalWidth > 0 && img.naturalHeight > 0) {
-                setNaturalSize({ width: img.naturalWidth, height: img.naturalHeight });
+                setNaturalSize({ width: img.naturalWidth, height: img.naturalHeight, slideKey });
               }
             }}
             style={{ width: "100%", height: "100%", display: "block", objectFit: "contain", background: "#fff", userSelect: "none", pointerEvents: "none" }}

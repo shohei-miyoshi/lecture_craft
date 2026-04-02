@@ -118,32 +118,33 @@ export default function SentenceCard({
           )}
         </div>
 
-        {/* テキスト + オーバーレイボタン */}
-        <div style={{ position: "relative", marginBottom: 6 }}>
-          <div style={{ position: "absolute", top: 0, left: 0, display: "flex", gap: 3, pointerEvents: "all", zIndex: 5 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap", marginBottom: 6 }}>
+          <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
             <button
               onClick={(e) => { e.stopPropagation(); sel(); setAiOpen((p) => !p); setHlOpen(false); setTimingOpen(false); }}
-              style={{ ...ovBtnBase, background: "rgba(167,139,250,.18)", borderColor: "rgba(167,139,250,.35)", color: "var(--pu)" }}
+              style={{ ...ovBtnBase, background: "rgba(167,139,250,.18)", borderColor: "rgba(167,139,250,.35)", color: "var(--pu)", opacity: 1 }}
             >
               ✨ AI修正
             </button>
             {showHl && (
               <button
                 onClick={(e) => { e.stopPropagation(); sel(); setHlOpen((p) => !p); setAiOpen(false); }}
-                style={{ ...ovBtnBase, background: "rgba(91,141,239,.18)", borderColor: "rgba(91,141,239,.35)", color: "var(--ac)" }}
+                style={{ ...ovBtnBase, background: "rgba(91,141,239,.18)", borderColor: "rgba(91,141,239,.35)", color: "var(--ac)", opacity: 1 }}
               >
                 🔦 HL設定
               </button>
             )}
           </div>
-          <div style={{ position: "absolute", top: 0, right: 0, pointerEvents: "all", zIndex: 5 }}>
-            <button
-              onClick={handleDelete}
-              style={{ ...ovBtnBase, background: "rgba(224,91,91,.16)", borderColor: "rgba(224,91,91,.3)", color: "var(--rd)" }}
-            >
-              🗑
-            </button>
-          </div>
+          <button
+            onClick={handleDelete}
+            style={{ ...ovBtnBase, background: "rgba(224,91,91,.16)", borderColor: "rgba(224,91,91,.3)", color: "var(--rd)", opacity: 1, flexShrink: 0 }}
+          >
+            🗑 削除
+          </button>
+        </div>
+
+        {/* テキスト */}
+        <div style={{ marginBottom: 6 }}>
           <div
             contentEditable
             suppressContentEditableWarning
@@ -154,7 +155,7 @@ export default function SentenceCard({
                 dispatch({ type: "UPD_TXT", id: sent.id, text: t });
               }
             }}
-            style={{ fontSize: 12, lineHeight: 1.62, color: "var(--tp)", borderRadius: 3, padding: "20px 28px 5px 4px", display: "block", width: "100%", outline: "none", cursor: "text" }}
+            style={{ fontSize: 12, lineHeight: 1.68, color: "var(--tp)", borderRadius: 3, padding: "4px 4px 5px", display: "block", width: "100%", outline: "none", cursor: "text", whiteSpace: "pre-wrap", wordBreak: "break-word" }}
           >
             {txt}
           </div>

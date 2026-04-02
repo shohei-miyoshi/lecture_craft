@@ -43,20 +43,20 @@ export default function RightPanel({ state, dispatch, addToast, requestConfirm, 
       {tab === "editor" && (
         <>
           <div style={{ padding: "12px 14px 10px", borderBottom: "1px solid rgba(255,255,255,.05)", flexShrink: 0, background: "linear-gradient(180deg, rgba(255,255,255,.02), transparent)" }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 3 }}>
-              <span style={{ fontFamily: "var(--ff)", fontSize: 12, fontWeight: 700 }}>
+            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8, marginBottom: 4, flexWrap: "wrap" }}>
+              <span style={{ fontFamily: "var(--ff)", fontSize: 12, fontWeight: 700, lineHeight: 1.4 }}>
                 {isAudio ? "台本編集" : "台本 ＋ ハイライト編集"}
               </span>
               <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                 <button
                   onClick={() => { dispatch({ type: "PUSH_HISTORY" }); dispatch({ type: "ADD_SENT" }); }}
-                  style={{ display: "inline-flex", alignItems: "center", gap: 3, padding: "3px 6px", border: "1px solid var(--bd2)", borderRadius: "var(--r)", background: "var(--s2)", color: "var(--tp)", fontSize: 10 }}
+                  style={{ display: "inline-flex", alignItems: "center", gap: 3, padding: "3px 6px", border: "1px solid var(--bd2)", borderRadius: "var(--r)", background: "var(--s2)", color: "var(--tp)", fontSize: 10, whiteSpace: "nowrap" }}
                 >
                   ＋ 文追加
                 </button>
               </div>
             </div>
-            <div style={{ fontSize: 10, color: "var(--tm)", lineHeight: 1.45 }}>
+            <div style={{ fontSize: 10, color: "var(--tm)", lineHeight: 1.55 }}>
               {isAudio
                 ? "文クリックで選択 → テキスト直接編集 or ✨AI修正 ／ ⏱ タイミング編集"
                 : "文クリックで選択 → テキスト直接編集 or ✨AI修正 ／ 左帯で状態確認・HL設定"}
