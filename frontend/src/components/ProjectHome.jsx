@@ -52,6 +52,46 @@ function isPdfFile(file) {
 const bevelRadius = 8;
 const bevelPanelRadius = "12px 8px 10px 8px";
 
+function homeButtonStyle(kind = "secondary", disabled = false) {
+  const styles = {
+    primary: {
+      border: "1px solid rgba(130,178,255,.44)",
+      background: "linear-gradient(180deg, rgba(122,165,242,.98), rgba(91,141,239,.88))",
+      color: "#fff",
+      boxShadow: "inset 0 1px 0 rgba(255,255,255,.18), 0 10px 22px rgba(91,141,239,.22), 0 1px 0 rgba(7,8,11,.38)",
+    },
+    secondary: {
+      border: "1px solid rgba(110,193,255,.26)",
+      background: "linear-gradient(180deg, rgba(37,41,51,.98), rgba(24,27,34,.96))",
+      color: "var(--tp)",
+      boxShadow: "inset 0 1px 0 rgba(255,255,255,.06), 0 8px 18px rgba(0,0,0,.22), 0 1px 0 rgba(7,8,11,.42)",
+    },
+    subtle: {
+      border: "1px solid rgba(255,255,255,.1)",
+      background: "linear-gradient(180deg, rgba(34,36,43,.95), rgba(22,24,29,.95))",
+      color: "var(--tp)",
+      boxShadow: "inset 0 1px 0 rgba(255,255,255,.05), 0 7px 16px rgba(0,0,0,.18), 0 1px 0 rgba(7,8,11,.38)",
+    },
+    danger: {
+      border: "1px solid rgba(224,91,91,.28)",
+      background: "linear-gradient(180deg, rgba(64,31,31,.98), rgba(46,24,24,.96))",
+      color: "var(--rd)",
+      boxShadow: "inset 0 1px 0 rgba(255,255,255,.04), 0 7px 16px rgba(0,0,0,.16), 0 1px 0 rgba(7,8,11,.38)",
+    },
+  };
+  const base = styles[kind] ?? styles.secondary;
+  return {
+    padding: "11px 16px",
+    borderRadius: bevelRadius,
+    fontSize: 12,
+    fontWeight: 700,
+    cursor: disabled ? "not-allowed" : "pointer",
+    opacity: disabled ? 0.58 : 1,
+    transition: "transform .12s ease, box-shadow .12s ease, opacity .12s ease",
+    ...base,
+  };
+}
+
 export default function ProjectHome({
   onCreateProject,
   onOpenProject,
@@ -224,31 +264,17 @@ export default function ProjectHome({
                     onClick={startProjectWithPdf}
                     disabled={!pendingPdf}
                     style={{
-                      padding: "11px 16px",
-                      border: "1px solid rgba(110,193,255,.28)",
-                      background: pendingPdf ? "var(--ac)" : "rgba(91,141,239,.2)",
-                      color: "#fff",
-                      fontSize: 12,
-                      fontWeight: 700,
-                      boxShadow: pendingPdf ? "0 14px 30px rgba(91,141,239,.24)" : "none",
-                      opacity: pendingPdf ? 1 : 0.55,
-                      cursor: pendingPdf ? "pointer" : "not-allowed",
-                      borderRadius: bevelRadius,
+                      ...homeButtonStyle("primary", !pendingPdf),
+                      boxShadow: pendingPdf
+                        ? "inset 0 1px 0 rgba(255,255,255,.18), 0 12px 24px rgba(91,141,239,.26), 0 1px 0 rgba(7,8,11,.38)"
+                        : "inset 0 1px 0 rgba(255,255,255,.08), 0 6px 16px rgba(0,0,0,.12), 0 1px 0 rgba(7,8,11,.32)",
                     }}
                   >
                     この PDF で作成
                   </button>
                   <button
                     onClick={() => onCreateProject?.()}
-                    style={{
-                      padding: "11px 16px",
-                      border: "1px solid rgba(110,193,255,.22)",
-                      background: "rgba(255,255,255,.05)",
-                      color: "var(--tp)",
-                      fontSize: 12,
-                      fontWeight: 700,
-                      borderRadius: bevelRadius,
-                    }}
+                    style={homeButtonStyle("secondary")}
                   >
                     空のプロジェクトを作成
                   </button>
@@ -284,16 +310,7 @@ export default function ProjectHome({
                 </div>
                 <button
                   onClick={onResumeEditing}
-                  style={{
-                    width: "100%",
-                    padding: "10px 12px",
-                    border: "1px solid rgba(110,193,255,.26)",
-                    background: "rgba(91,141,239,.12)",
-                    color: "var(--tp)",
-                    fontSize: 12,
-                    fontWeight: 700,
-                    borderRadius: bevelRadius,
-                  }}
+                  style={{ ...homeButtonStyle("secondary"), width: "100%", padding: "10px 12px" }}
                 >
                   いまの編集を続ける
                 </button>
@@ -448,28 +465,13 @@ export default function ProjectHome({
                         <div style={{ display: "flex", gap: 8, justifySelf: "end", flexWrap: "wrap" }}>
                           <button
                             onClick={() => onOpenProject(project)}
-                            style={{
-                              padding: "9px 12px",
-                              border: "1px solid rgba(110,193,255,.22)",
-                              background: "var(--ac)",
-                              color: "#fff",
-                              fontSize: 11,
-                              fontWeight: 700,
-                              borderRadius: bevelRadius,
-                            }}
+                            style={{ ...homeButtonStyle("primary"), padding: "9px 12px", fontSize: 11 }}
                           >
                             開く
                           </button>
                           <button
                             onClick={() => handleDelete(project.id)}
-                            style={{
-                              padding: "9px 12px",
-                              border: "1px solid rgba(224,91,91,.24)",
-                              background: "var(--rdd)",
-                              color: "var(--rd)",
-                              fontSize: 11,
-                              borderRadius: bevelRadius,
-                            }}
+                            style={{ ...homeButtonStyle("danger"), padding: "9px 12px", fontSize: 11 }}
                           >
                             削除
                           </button>
