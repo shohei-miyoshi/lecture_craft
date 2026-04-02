@@ -47,6 +47,21 @@ export default function App() {
   const { confirmProps, requestConfirm, requestPrompt } = useConfirm();
   const { layout, startResizeLeft, startResizeRight, resizingLeft, resizingRight, resetLayout } = useResizableLayout();
   const isDirty = state.generated && (!state.savedFingerprint || fingerprintProjectState(state, state.projectMeta?.name) !== state.savedFingerprint);
+  const currentWorkspace =
+    state.generated || state.status === "proc" || Boolean(pdfFile) || Boolean(state.projectMeta?.name)
+      ? {
+          name: state.projectMeta?.name ?? pdfFile?.name?.replace(/\.pdf$/i, "") ?? "編集中のプロジェクト",
+          data: {
+            slides: state.slides,
+            sentences: state.sents,
+            highlights: state.hls,
+            mode: state.appMode,
+            status: state.status,
+            status_message: state.statusMsg,
+            pdf_name: pdfFile?.name ?? null,
+          },
+        }
+      : null;
 
   const persistProject = (forcedName = null) => {
     const name = forcedName ?? state.projectMeta?.name ?? pdfFile?.name?.replace(/\.pdf$/i, "") ?? "新しいプロジェクト";
@@ -387,7 +402,7 @@ export default function App() {
           onCreateProject={handleCreateProject}
           onOpenProject={handleOpenProject}
           onResumeEditing={() => setStudioScreen("editor")}
-          currentProject={state.generated ? { name: state.projectMeta?.name ?? "編集中のプロジェクト", data: { slides: state.slides, sentences: state.sents, highlights: state.hls, mode: state.appMode } } : null}
+          currentProject={currentWorkspace}
           requestConfirm={requestConfirm}
           requestPrompt={requestPrompt}
           addToast={addToast}

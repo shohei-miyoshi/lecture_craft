@@ -124,6 +124,8 @@ export default function ProjectHome({
     return sorted;
   }, [query, refreshKey, sortKey]);
   const currentData = currentProject?.data ?? null;
+  const currentStatus = currentData?.status ?? null;
+  const isGeneratingWorkspace = currentStatus === "proc";
 
   const handlePendingPdf = (file) => {
     if (!isPdfFile(file)) {
@@ -260,6 +262,14 @@ export default function ProjectHome({
                 </div>
 
                 <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", justifyContent: "flex-start" }}>
+                  {currentProject && (
+                    <button
+                      onClick={onResumeEditing}
+                      style={homeButtonStyle("secondary")}
+                    >
+                      {isGeneratingWorkspace ? "生成中の作業に戻る" : "直前の作業に戻る"}
+                    </button>
+                  )}
                   <button
                     onClick={startProjectWithPdf}
                     disabled={!pendingPdf}
@@ -298,7 +308,9 @@ export default function ProjectHome({
                   {currentProject.name}
                 </div>
                 <div style={{ fontSize: 11, color: "var(--ts)", lineHeight: 1.7, marginBottom: 12 }}>
-                  編集中の状態を保持したままホームに戻っています。続きからすぐ再開できます。
+                  {isGeneratingWorkspace
+                    ? "生成中のままホームに戻っています。ボタンからすぐに編集中の画面へ戻れます。"
+                    : "編集中の状態を保持したままホームに戻っています。続きからすぐ再開できます。"}
                 </div>
                 <div style={{ marginBottom: 10 }}>
                   {[
@@ -306,13 +318,14 @@ export default function ProjectHome({
                     ["台本", currentData.sentences?.length ?? 0, "var(--pu)"],
                     ["枠", currentData.highlights?.length ?? 0, "var(--am)"],
                     ["モード", modeLabel(currentData.mode), "var(--gr)"],
+                    ...(isGeneratingWorkspace ? [["状態", "生成中", "var(--am)"]] : []),
                   ].map(([label, value, accent]) => metricBlock(label, value, accent))}
                 </div>
                 <button
                   onClick={onResumeEditing}
                   style={{ ...homeButtonStyle("secondary"), width: "100%", padding: "10px 12px" }}
                 >
-                  いまの編集を続ける
+                  {isGeneratingWorkspace ? "生成中の作業に戻る" : "いまの編集を続ける"}
                 </button>
               </div>
             )}
