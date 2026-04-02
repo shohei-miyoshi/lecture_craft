@@ -7,18 +7,6 @@ const REGION_PALETTE = [
   { color: "#7fe0d0", bg: "rgba(127,224,208,.16)", bgStrong: "rgba(127,224,208,.28)" },
 ];
 
-function sortHighlightsForPresentation(highlights = []) {
-  return [...(highlights ?? [])].sort((a, b) => {
-    const ay = Number(a?.y ?? 0);
-    const by = Number(b?.y ?? 0);
-    if (ay !== by) return ay - by;
-    const ax = Number(a?.x ?? 0);
-    const bx = Number(b?.x ?? 0);
-    if (ax !== bx) return ax - bx;
-    return String(a?.id ?? "").localeCompare(String(b?.id ?? ""), "ja");
-  });
-}
-
 export function getHighlightRegionMeta(highlights = [], highlightId = null) {
   if (!highlightId) {
     return {
@@ -32,8 +20,7 @@ export function getHighlightRegionMeta(highlights = [], highlightId = null) {
     };
   }
 
-  const sorted = sortHighlightsForPresentation(highlights);
-  const index = Math.max(0, sorted.findIndex((item) => item.id === highlightId));
+  const index = Math.max(0, (highlights ?? []).findIndex((item) => item.id === highlightId));
   const palette = REGION_PALETTE[index % REGION_PALETTE.length];
   const regionNumber = index + 1;
   return {

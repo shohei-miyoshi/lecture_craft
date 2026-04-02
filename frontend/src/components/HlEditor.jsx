@@ -146,12 +146,13 @@ export default function HlEditor({
                 </button>
               </div>
 
-              <HighlightLinkPanel
-                sentence={sentence}
-                current={hl}
-                availableHighlights={availableHighlights}
-                onLink={linkExisting}
-              />
+            <HighlightLinkPanel
+              sentence={sentence}
+              current={hl}
+              slideHighlights={slideHighlights}
+              availableHighlights={availableHighlights}
+              onLink={linkExisting}
+            />
             </div>
           </div>
         ) : (
@@ -167,6 +168,7 @@ export default function HlEditor({
             <HighlightLinkPanel
               sentence={sentence}
               current={null}
+              slideHighlights={slideHighlights}
               availableHighlights={availableHighlights}
               onLink={linkExisting}
             />
@@ -177,9 +179,8 @@ export default function HlEditor({
   );
 }
 
-function HighlightLinkPanel({ sentence, current, availableHighlights, onLink }) {
-  const regionPool = [...(current ? [current] : []), ...availableHighlights];
-  const currentMeta = current ? getHighlightRegionMeta(regionPool, current.id) : null;
+function HighlightLinkPanel({ sentence, current, slideHighlights, availableHighlights, onLink }) {
+  const currentMeta = current ? getHighlightRegionMeta(slideHighlights, current.id) : null;
   return (
     <div style={{ borderTop: "1px solid var(--bd)", paddingTop: 8 }}>
       <div style={{ fontSize: 10, color: "var(--tm)", marginBottom: 6 }}>
@@ -195,7 +196,7 @@ function HighlightLinkPanel({ sentence, current, availableHighlights, onLink }) 
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           {availableHighlights.map((item) => {
-            const meta = getHighlightRegionMeta(regionPool, item.id);
+            const meta = getHighlightRegionMeta(slideHighlights, item.id);
             return (
               <button
                 key={item.id}
