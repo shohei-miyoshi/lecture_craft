@@ -85,6 +85,12 @@ export default function App() {
     addToast("ok", `プロジェクト「${project.name}」を読み込みました`);
   };
 
+  const goHome = () => {
+    setView("studio");
+    window.location.hash = "";
+    setStudioScreen("home");
+  };
+
   // ── キーボードショートカット ──
   useEffect(() => {
     const onHashChange = () => setView(window.location.hash === "#admin" ? "admin" : "studio");
@@ -241,7 +247,24 @@ export default function App() {
         }}
       >
         <div style={{ position: "absolute", inset: 0, background: "linear-gradient(90deg, rgba(91,141,239,.14), transparent 20%, transparent 78%, rgba(110,193,255,.08))", pointerEvents: "none" }} />
-        <div style={{ fontFamily: "var(--ff)", fontSize: 15, fontWeight: 800, display: "flex", alignItems: "center", gap: 8, position: "relative", zIndex: 1 }}>
+        <button
+          onClick={goHome}
+          style={{
+            fontFamily: "var(--ff)",
+            fontSize: 15,
+            fontWeight: 800,
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            position: "relative",
+            zIndex: 1,
+            border: "none",
+            background: "none",
+            color: "inherit",
+            padding: 0,
+            textAlign: "left",
+          }}
+        >
           <div style={{ width: 24, height: 24, background: "linear-gradient(135deg, var(--ac), #7aa7ff)", borderRadius: 7, display: "grid", placeItems: "center", fontSize: 11, boxShadow: "0 10px 24px rgba(91,141,239,.28)" }}>▶</div>
           <div>
             <div style={{ lineHeight: 1 }}>Lecture<span style={{ color: "var(--ac)" }}>Craft</span></div>
@@ -253,7 +276,7 @@ export default function App() {
                   : state.projectMeta?.name ?? "EDITOR"}
             </div>
           </div>
-        </div>
+        </button>
         <div style={{ width: 1, height: 24, background: "linear-gradient(180deg, transparent, var(--bd2), transparent)", position: "relative", zIndex: 1 }} />
         <div style={{ display: "inline-flex", padding: 3, borderRadius: 999, background: "var(--s2)", border: "1px solid var(--bd)" }}>
           {[
@@ -304,6 +327,8 @@ export default function App() {
         <ProjectHome
           onCreateProject={handleCreateProject}
           onOpenProject={handleOpenProject}
+          onResumeEditing={() => setStudioScreen("editor")}
+          currentProject={state.generated ? { name: state.projectMeta?.name ?? "編集中のプロジェクト", data: { slides: state.slides, sentences: state.sents, highlights: state.hls, mode: state.appMode } } : null}
           requestConfirm={requestConfirm}
         />
       ) : (
