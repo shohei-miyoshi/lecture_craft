@@ -235,7 +235,7 @@ export default function ProjectHome({
               </div>
 
               <div style={{ marginTop: 22, maxWidth: 720 }}>
-                <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: 12, alignItems: "stretch" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 12, alignItems: "stretch" }}>
                   <div
                     onDragOver={(e) => {
                       e.preventDefault();
@@ -287,13 +287,14 @@ export default function ProjectHome({
                     </div>
                   </div>
 
+                </div>
+
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", justifyContent: "flex-start", marginTop: 12 }}>
                   <button
                     onClick={startProjectWithPdf}
                     disabled={!pendingPdf}
                     style={{
                       ...homeButtonStyle("primary", !pendingPdf),
-                      minWidth: 158,
-                      alignSelf: "stretch",
                       boxShadow: pendingPdf
                         ? "inset 0 1px 0 rgba(255,255,255,.18), 0 12px 24px rgba(91,141,239,.26), 0 1px 0 rgba(7,8,11,.38)"
                         : "inset 0 1px 0 rgba(255,255,255,.08), 0 6px 16px rgba(0,0,0,.12), 0 1px 0 rgba(7,8,11,.32)",
@@ -301,9 +302,6 @@ export default function ProjectHome({
                   >
                     この PDF で作成
                   </button>
-                </div>
-
-                <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", justifyContent: "flex-start", marginTop: 12 }}>
                   <button
                     onClick={() => onCreateProject?.()}
                     style={homeButtonStyle("secondary")}
