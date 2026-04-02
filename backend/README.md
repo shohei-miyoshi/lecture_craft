@@ -52,39 +52,6 @@ auto_lecture/
 │           ├─ layout.json
 │           └─ layout_vis.png
 │
-├─ experiments/                             # ★実験・評価専用（生成本体とは分離）
-│  ├─ config/
-│  │  └─ experiment_config.json             # 実験条件（9スライド×8条件・比較ペア等）
-│  │
-│  ├─ scripts/                              # 実験用CLIスクリプト
-│  │  ├─ run_pipeline.py                    # ★生成→抽出→評価を全自動で回すマスター
-│  │  ├─ 01_generate.py                    # 実験条件に基づく一括生成
-│  │  ├─ 03_extract.py                     # outputs から評価用CSVを抽出
-│  │  ├─ 04_metrics_basic.py               # 文字数・文数など機械的指標
-│  │  ├─ 05_metrics_gpt_counts.py           # GPT-5による専門語密度などの計測
-│  │  ├─ run_judge_pairwise.py               # AIによる「どっちが〇〇」比較
-│  │  ├─ 07_pack_animation_review.py        # 人手評価用（アニメ注釈付き台本）
-│  │  └─ 02_bundle_run_outputs.py           # 1実験分の生成・評価結果をまとめて固める
-│  │
-│  └─ runs/                                 # ★1回の生成＋評価＝1 run
-│     └─ <experiment_run_id>/               # 例: exp_2025_0106_153210
-│        ├─ config/                         # このrunで使った設定のコピー
-│        ├─ generation/                     # outputs のスナップショット
-│        ├─ extracted/                      # 評価用に正規化したCSV
-│        │  ├─ slide_script.csv             # 全スライド×全条件の台本（1ファイル）
-│        │  └─ animation_mapping.csv
-│        ├─ analysis/                       # 自動評価結果
-│        │  ├─ metrics_basic.csv
-│        │  ├─ gpt_counts.jsonl
-│        │  ├─ judge_votes.jsonl
-│        │  └─ judge_summary.csv
-│        ├─ review/                         # 人手評価用資料（HTML / md）
-│        ├─ logs/                           # 実行ログ（stdout / stderr）
-│        ├─ reports/                        # 実験サマリ・失敗報告
-│        │  ├─ summary.json
-│        │  └─ failures.txt
-│        └─ DONE.txt                        # 生成〜評価が完走した印
-│
 ├─ requirements_min.txt                     # 最小依存関係
 └─ README.md                                # プロジェクト説明（←ここに貼る）
 
@@ -144,7 +111,7 @@ curl http://127.0.0.1:8000/api/health
 実際の生成はバックグラウンド worker が処理し、進捗は `GET /api/jobs/{job_id}` で確認します。
 
 管理ダッシュボード用に `GET /api/admin/overview` も追加しています。
-ここでは generate / export の利用状況と `experiments/runs/` の概要を返します。
+ここでは generate / export / 研究セッションの利用状況、編集傾向、日別の活動量を返します。
 
 補足:
 - `backend/.venv` は `Python 3.10` または `3.11` で作ってください
