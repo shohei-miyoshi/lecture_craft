@@ -218,7 +218,7 @@ export default function AdminDashboard({ addToast }) {
               </section>
 
               <section style={{ padding: 16, borderRadius: 14, background: "var(--s2)", border: "1px solid var(--bd)" }}>
-                <div style={{ fontFamily: "var(--ff)", fontSize: 13, marginBottom: 10 }}>Experiment Snapshot</div>
+                <div style={{ fontFamily: "var(--ff)", fontSize: 13, marginBottom: 10 }}>実験状況</div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                   <div style={{ padding: 12, borderRadius: 12, background: "var(--sur)", border: "1px solid var(--bd)" }}>
                     <div style={{ fontSize: 10, color: "var(--tm)", marginBottom: 6 }}>完走 run</div>
@@ -234,56 +234,56 @@ export default function AdminDashboard({ addToast }) {
 
             <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: 12, marginBottom: 18 }}>
               <TableSection
-                title="Recent Generate Jobs"
+                title="最近の生成ジョブ"
                 rows={data?.recent_jobs ?? []}
                 emptyText="まだジョブ履歴はありません"
                 columns={[
-                  { key: "job_id", label: "Job ID", mono: true, emphasis: true },
-                  { key: "status", label: "Status", emphasis: true },
-                  { key: "payload", label: "Mode", render: (row) => row.payload?.mode ?? "—" },
-                  { key: "message", label: "Message" },
-                  { key: "updated_at", label: "Updated", render: (row) => timeText(row.updated_at) },
+                  { key: "job_id", label: "ジョブID", mono: true, emphasis: true },
+                  { key: "status", label: "状態", emphasis: true },
+                  { key: "payload", label: "モード", render: (row) => row.payload?.mode ?? "—" },
+                  { key: "message", label: "メッセージ" },
+                  { key: "updated_at", label: "更新時刻", render: (row) => timeText(row.updated_at) },
                 ]}
               />
               <TableSection
-                title="Recent Exports"
+                title="最近の書き出し"
                 rows={data?.recent_exports ?? []}
                 emptyText="まだ export 履歴はありません"
                 columns={[
-                  { key: "export_type", label: "Type", emphasis: true },
-                  { key: "status", label: "Status" },
-                  { key: "mode", label: "Mode" },
-                  { key: "sentence_count", label: "Sentences", mono: true },
-                  { key: "created_at", label: "Created", render: (row) => timeText(row.created_at) },
+                  { key: "export_type", label: "種別", emphasis: true },
+                  { key: "status", label: "状態" },
+                  { key: "mode", label: "モード" },
+                  { key: "sentence_count", label: "台本文数", mono: true },
+                  { key: "created_at", label: "作成時刻", render: (row) => timeText(row.created_at) },
                 ]}
               />
             </div>
 
             <TableSection
-              title="Recent Research Sessions"
+              title="最近の研究セッション"
               rows={data?.research?.recent_sessions ?? []}
               emptyText="研究セッションの保存履歴はまだありません"
               columns={[
-                { key: "session_id", label: "Session", mono: true, emphasis: true },
-                { key: "trigger", label: "Trigger", emphasis: true },
-                { key: "mode", label: "Mode" },
+                { key: "session_id", label: "セッションID", mono: true, emphasis: true },
+                { key: "trigger", label: "トリガ", emphasis: true },
+                { key: "mode", label: "モード" },
                 { key: "research", label: "HL修正", mono: true, render: (row) => row.research?.summary?.highlights_modified ?? "0" },
                 { key: "research", label: "台本文修正", mono: true, render: (row) => row.research?.summary?.sentences_text_modified ?? "0" },
-                { key: "saved_at", label: "Saved", render: (row) => timeText(row.saved_at) },
+                { key: "saved_at", label: "保存時刻", render: (row) => timeText(row.saved_at) },
               ]}
             />
 
             <TableSection
-              title="Recent Experiment Runs"
+              title="最近の実験 run"
               rows={data?.experiments?.recent_runs ?? []}
               emptyText="experiments/runs に run がまだありません"
               columns={[
-                { key: "run_id", label: "Run ID", mono: true, emphasis: true },
-                { key: "completed", label: "Done", render: (row) => row.completed ? "YES" : "NO" },
-                { key: "all_ok", label: "All OK", render: (row) => row.all_ok ? "YES" : "NO" },
-                { key: "failure_count", label: "Failures", mono: true },
-                { key: "step_count", label: "Steps", mono: true },
-                { key: "updated_at", label: "Updated", render: (row) => timeText(row.updated_at) },
+                { key: "run_id", label: "run ID", mono: true, emphasis: true },
+                { key: "completed", label: "完了", render: (row) => row.completed ? "はい" : "いいえ" },
+                { key: "all_ok", label: "全体成功", render: (row) => row.all_ok ? "はい" : "いいえ" },
+                { key: "failure_count", label: "失敗数", mono: true },
+                { key: "step_count", label: "ステップ数", mono: true },
+                { key: "updated_at", label: "更新時刻", render: (row) => timeText(row.updated_at) },
               ]}
             />
           </>

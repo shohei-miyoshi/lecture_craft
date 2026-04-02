@@ -13,6 +13,7 @@ import CenterPanel   from "./components/CenterPanel.jsx";
 import RightPanel    from "./components/RightPanel.jsx";
 import ExportPanel   from "./components/ExportPanel.jsx";
 import AdminDashboard from "./components/AdminDashboard.jsx";
+import ProjectHome from "./components/ProjectHome.jsx";
 
 /** リサイズハンドル（縦線） */
 function ResizeHandle({ onMouseDown, resizing }) {
@@ -40,6 +41,7 @@ export default function App() {
   const [pdfFile, setPdfFile]     = useState(null);
   const [tab, setTab]             = useState("editor");
   const [view, setView]           = useState(() => (window.location.hash === "#admin" ? "admin" : "studio"));
+  const [studioScreen, setStudioScreen] = useState("home");
   const { toasts, addToast }      = useToast();
   const { confirmProps, requestConfirm } = useConfirm();
   const { layout, startResizeLeft, startResizeRight, resizingLeft, resizingRight, resetLayout } = useResizableLayout();
@@ -49,6 +51,7 @@ export default function App() {
     if (!state.generated) {
       dispatch({ type: "RESET" });
       setPdfFile(null);
+      setStudioScreen("home");
       return;
     }
     requestConfirm({
@@ -61,8 +64,25 @@ export default function App() {
       onConfirm: () => {
         dispatch({ type: "RESET" });
         setPdfFile(null);
+        setStudioScreen("home");
       },
     });
+  };
+
+  const handleCreateProject = () => {
+    dispatch({ type: "RESET" });
+    setPdfFile(null);
+    setTab("editor");
+    setStudioScreen("editor");
+  };
+
+  const handleOpenProject = (project) => {
+    if (!project?.data) return;
+    dispatch({ type: "LOAD", d: project.data });
+    setPdfFile(null);
+    setTab("editor");
+    setStudioScreen("editor");
+    addToast("ok", `プロジェクト「${project.name}」を読み込みました`);
   };
 
   // ── キーボードショートカット ──
@@ -74,7 +94,7 @@ export default function App() {
 
   useEffect(() => {
     const onMouseSide = (e) => {
-      if (view === "admin") return;
+      if (view === "admin" || studioScreen === "home") return;
       if (e.button === 3) {
         e.preventDefault();
         e.stopPropagation();
@@ -95,11 +115,11 @@ export default function App() {
       window.removeEventListener("click", onMouseSide, true);
       window.removeEventListener("auxclick", onMouseSide, true);
     };
-  }, [view]);
+  }, [view, studioScreen]);
 
   useEffect(() => {
     const handler = (e) => {
-      if (view === "admin") return;
+      if (view === "admin" || studioScreen === "home") return;
       if (["INPUT", "TEXTAREA"].includes(e.target.tagName) || e.target.contentEditable === "true") return;
       if (confirmProps.open) return;
       if ((e.metaKey || e.ctrlKey) && e.code === "KeyZ" && !e.shiftKey) {
@@ -185,7 +205,7 @@ export default function App() {
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [state.playing, state.curSl, state.slides.length, state.selHl, confirmProps.open, view]);
+  }, [state.playing, state.curSl, state.slides.length, state.selHl, confirmProps.open, view, studioScreen]);
 
   const switchView = (nextView) => {
     setView(nextView);
@@ -226,16 +246,20 @@ export default function App() {
         </div>
         <div style={{ flex: 1 }} />
         {/* レイアウトリセット */}
-        <button
-          onClick={resetLayout}
-          title="レイアウトをリセット"
-          style={{ padding: "3px 6px", border: "1px solid var(--bd2)", borderRadius: "var(--r)", background: "none", color: "var(--tm)", fontSize: 10 }}
-        >
-          ⊡
-        </button>
-        <button onClick={handleReset} style={{ display: "inline-flex", alignItems: "center", gap: 3, padding: "3px 6px", border: "1px solid var(--bd2)", borderRadius: "var(--r)", background: "var(--s2)", color: "var(--tp)", fontSize: 10 }}>
-          ↺ リセット
-        </button>
+        {view === "studio" && studioScreen === "editor" && (
+          <>
+            <button
+              onClick={resetLayout}
+              title="レイアウトをリセット"
+              style={{ padding: "3px 6px", border: "1px solid var(--bd2)", borderRadius: "var(--r)", background: "none", color: "var(--tm)", fontSize: 10 }}
+            >
+              ⊡
+            </button>
+            <button onClick={handleReset} style={{ display: "inline-flex", alignItems: "center", gap: 3, padding: "3px 6px", border: "1px solid var(--bd2)", borderRadius: "var(--r)", background: "var(--s2)", color: "var(--tp)", fontSize: 10 }}>
+              ↺ リセット
+            </button>
+          </>
+        )}
       </header>
 
       {/* ── メイン3カラム + リサイズハンドル ── */}
@@ -243,6 +267,12 @@ export default function App() {
         <div style={{ flex: 1, minHeight: 0 }}>
           <AdminDashboard addToast={addToast} />
         </div>
+      ) : view === "studio" && studioScreen === "home" ? (
+        <ProjectHome
+          onCreateProject={handleCreateProject}
+          onOpenProject={handleOpenProject}
+          requestConfirm={requestConfirm}
+        />
       ) : (
       <div style={{ display: "flex", flex: 1, overflow: "hidden", minHeight: 0 }}>
 
