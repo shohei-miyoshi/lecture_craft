@@ -19,6 +19,10 @@ export function useConfirm() {
     confirmColor: "var(--rd)",
     confirmBg: "var(--rdd)",
     confirmBorder: "rgba(224,91,91,.35)",
+    secondaryLabel: "",
+    secondaryColor: "var(--ts)",
+    secondaryBg: "var(--s2)",
+    secondaryBorder: "var(--bd2)",
     inputLabel: "",
     inputPlaceholder: "",
     inputInitialValue: "",
@@ -32,6 +36,11 @@ export function useConfirm() {
     confirmColor = "var(--rd)",
     confirmBg    = "var(--rdd)",
     confirmBorder= "rgba(224,91,91,.35)",
+    secondaryLabel = "",
+    secondaryColor = "var(--ts)",
+    secondaryBg = "var(--s2)",
+    secondaryBorder = "var(--bd2)",
+    onSecondary = null,
     onConfirm,
   }) => {
     setState({
@@ -43,9 +52,14 @@ export function useConfirm() {
       confirmColor,
       confirmBg,
       confirmBorder,
+      secondaryLabel,
+      secondaryColor,
+      secondaryBg,
+      secondaryBorder,
       inputLabel: "",
       inputPlaceholder: "",
       inputInitialValue: "",
+      onSecondary,
       onConfirm,
     });
   }, []);
@@ -71,21 +85,30 @@ export function useConfirm() {
       confirmColor,
       confirmBg,
       confirmBorder,
+      secondaryLabel: "",
+      secondaryColor: "var(--ts)",
+      secondaryBg: "var(--s2)",
+      secondaryBorder: "var(--bd2)",
       inputLabel,
       inputPlaceholder,
       inputInitialValue,
+      onSecondary: null,
       onConfirm,
     });
   }, []);
 
   const onCancel  = useCallback(() => setState((s) => ({ ...s, open: false })), []);
+  const onSecondary = useCallback(() => {
+    state.onSecondary?.();
+    setState((s) => ({ ...s, open: false }));
+  }, [state.onSecondary]);
   const onConfirm = useCallback((value) => {
     state.onConfirm?.(value);
     setState((s) => ({ ...s, open: false }));
   }, [state.onConfirm]);
 
   return {
-    confirmProps: { ...state, onCancel, onConfirm },
+    confirmProps: { ...state, onCancel, onConfirm, onSecondary },
     requestConfirm,
     requestPrompt,
   };

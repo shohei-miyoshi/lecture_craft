@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from "react";
-import { deleteProject, listProjects, loadProject } from "../utils/projectStore.js";
+import { deleteProject, listProjects, loadProject, updateProjectName } from "../utils/projectStore.js";
 
 function timeText(value) {
   if (!value) return "—";
@@ -55,13 +55,31 @@ export default function ProjectHome({
   onResumeEditing,
   currentProject,
   requestConfirm,
+  requestPrompt,
   addToast,
 }) {
   const [refreshKey, setRefreshKey] = useState(0);
   const [draggingPdf, setDraggingPdf] = useState(false);
   const [pendingPdf, setPendingPdf] = useState(null);
+  const [query, setQuery] = useState("");
+  const [sortKey, setSortKey] = useState("updated_desc");
   const fileInputRef = useRef(null);
-  const projects = useMemo(() => listProjects(), [refreshKey]);
+  const projects = useMemo(() => {
+    const rows = listProjects();
+    const filtered = rows.filter((project) => {
+      const q = query.trim().toLowerCase();
+      if (!q) return true;
+      return String(project.name ?? "").toLowerCase().includes(q);
+    });
+    const sorted = [...filtered];
+    sorted.sort((a, b) => {
+      if (sortKey === "name_asc") return String(a.name ?? "").localeCompare(String(b.name ?? ""), "ja");
+      if (sortKey === "name_desc") return String(b.name ?? "").localeCompare(String(a.name ?? ""), "ja");
+      if (sortKey === "updated_asc") return String(a.updated_at ?? "").localeCompare(String(b.updated_at ?? ""));
+      return String(b.updated_at ?? "").localeCompare(String(a.updated_at ?? ""));
+    });
+    return sorted;
+  }, [query, refreshKey, sortKey]);
   const currentData = currentProject?.data ?? null;
 
   const handlePendingPdf = (file) => {
@@ -83,6 +101,24 @@ export default function ProjectHome({
       onConfirm: () => {
         deleteProject(projectId);
         setRefreshKey((v) => v + 1);
+      },
+    });
+  };
+
+  const handleRename = (project) => {
+    requestPrompt?.({
+      title: "プロジェクト名を変更",
+      message: "ホーム画面で表示するプロジェクト名を変更します。",
+      confirmLabel: "変更する",
+      inputLabel: "プロジェクト名",
+      inputInitialValue: project.name ?? "",
+      inputPlaceholder: "例: パターン認識の講義",
+      onConfirm: (value) => {
+        const nextName = String(value ?? "").trim();
+        if (!nextName || nextName === project.name) return;
+        updateProjectName(project.id, nextName);
+        setRefreshKey((v) => v + 1);
+        addToast?.("ok", `プロジェクト名を「${nextName}」に変更しました`);
       },
     });
   };
@@ -127,7 +163,50 @@ export default function ProjectHome({
                 研究用の編集ログや書き出しフローも、この入口からまとめて扱えます。
               </div>
 
-              <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 320px) auto", gap: 14, alignItems: "stretch", marginTop: 18 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "auto minmax(0, 320px)", gap: 14, alignItems: "stretch", marginTop: 18 }}>
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-start" }}>
+                  <button
+                    onClick={startProjectWithPdf}
+                    disabled={!pendingPdf}
+                    style={{
+                      padding: "11px 16px",
+                      border: "1px solid rgba(110,193,255,.28)",
+                      background: pendingPdf ? "var(--ac)" : "rgba(91,141,239,.2)",
+                      color: "#fff",
+                      fontSize: 12,
+                      fontWeight: 700,
+                      boxShadow: pendingPdf ? "0 14px 30px rgba(91,141,239,.24)" : "none",
+                      opacity: pendingPdf ? 1 : 0.55,
+                      cursor: pendingPdf ? "pointer" : "not-allowed",
+                    }}
+                  >
+                    この PDF で作成
+                  </button>
+                  <button
+                    onClick={() => onCreateProject?.()}
+                    style={{
+                      padding: "11px 16px",
+                      border: "1px solid rgba(110,193,255,.22)",
+                      background: "rgba(255,255,255,.05)",
+                      color: "var(--tp)",
+                      fontSize: 12,
+                      fontWeight: 700,
+                    }}
+                  >
+                    空のプロジェクトを作成
+                  </button>
+                  <div
+                    style={{
+                      padding: "11px 14px",
+                      background: "linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.02))",
+                      color: "var(--ts)",
+                      fontSize: 11,
+                      clipPath: "polygon(0 0, 100% 0, 96% 100%, 0 100%)",
+                    }}
+                  >
+                    ローカル保存件数: <span style={{ color: "var(--tp)", fontFamily: "var(--fm)" }}>{projects.length}</span>
+                  </div>
+                </div>
                 <div
                   onDragOver={(e) => {
                     e.preventDefault();
@@ -166,50 +245,6 @@ export default function ProjectHome({
                   </div>
                   <div style={{ fontSize: 11, color: pendingPdf ? "var(--tp)" : "var(--tm)", fontFamily: pendingPdf ? "var(--fm)" : "inherit" }}>
                     {pendingPdf ? pendingPdf.name : "まだ PDF は選択されていません"}
-                  </div>
-                </div>
-
-                <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-start" }}>
-                  <button
-                    onClick={() => onCreateProject?.()}
-                    style={{
-                      padding: "11px 16px",
-                      border: "1px solid rgba(110,193,255,.22)",
-                      background: "rgba(255,255,255,.05)",
-                      color: "var(--tp)",
-                      fontSize: 12,
-                      fontWeight: 700,
-                    }}
-                  >
-                    空のプロジェクトを作成
-                  </button>
-                  <button
-                    onClick={startProjectWithPdf}
-                    disabled={!pendingPdf}
-                    style={{
-                      padding: "11px 16px",
-                      border: "1px solid rgba(110,193,255,.28)",
-                      background: pendingPdf ? "var(--ac)" : "rgba(91,141,239,.2)",
-                      color: "#fff",
-                      fontSize: 12,
-                      fontWeight: 700,
-                      boxShadow: pendingPdf ? "0 14px 30px rgba(91,141,239,.24)" : "none",
-                      opacity: pendingPdf ? 1 : 0.55,
-                      cursor: pendingPdf ? "pointer" : "not-allowed",
-                    }}
-                  >
-                    この PDF で作成
-                  </button>
-                  <div
-                    style={{
-                      padding: "11px 14px",
-                      background: "rgba(255,255,255,.03)",
-                      color: "var(--ts)",
-                      fontSize: 11,
-                      borderLeft: "2px solid rgba(110,193,255,.24)",
-                    }}
-                  >
-                    ローカル保存件数: <span style={{ color: "var(--tp)", fontFamily: "var(--fm)" }}>{projects.length}</span>
                   </div>
                 </div>
               </div>
@@ -267,18 +302,24 @@ export default function ProjectHome({
                 <div style={{ fontFamily: "var(--ff)", fontSize: 24, lineHeight: 1.1, marginBottom: 4 }}>保存済みプロジェクト</div>
                 <div style={{ fontSize: 11, color: "var(--tm)" }}>ローカルブラウザに保存されている編集データです</div>
               </div>
-              <button
-                onClick={() => setRefreshKey((v) => v + 1)}
-                style={{
-                  padding: "7px 11px",
-                  border: "1px solid var(--bd2)",
-                  background: "rgba(255,255,255,.03)",
-                  color: "var(--tp)",
-                  fontSize: 11,
-                }}
-              >
-                更新
-              </button>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="検索"
+                  style={{ width: 110, padding: "6px 8px", background: "rgba(255,255,255,.04)", border: "1px solid var(--bd2)", color: "var(--tp)", fontSize: 11 }}
+                />
+                <select
+                  value={sortKey}
+                  onChange={(e) => setSortKey(e.target.value)}
+                  style={{ padding: "6px 8px", background: "rgba(255,255,255,.04)", border: "1px solid var(--bd2)", color: "var(--tp)", fontSize: 11 }}
+                >
+                  <option value="updated_desc">新しい順</option>
+                  <option value="updated_asc">古い順</option>
+                  <option value="name_asc">名前順</option>
+                  <option value="name_desc">名前逆順</option>
+                </select>
+              </div>
             </div>
 
             {projects.length === 0 ? (
@@ -307,10 +348,15 @@ export default function ProjectHome({
                       style={{
                         position: "relative",
                         padding: "18px 18px 16px 22px",
-                        background: "linear-gradient(90deg, rgba(255,255,255,.03), rgba(255,255,255,.012) 35%, transparent)",
+                        background: index % 2 === 0
+                          ? "linear-gradient(90deg, rgba(255,255,255,.03), rgba(255,255,255,.012) 35%, transparent)"
+                          : "linear-gradient(135deg, rgba(91,141,239,.05), rgba(255,255,255,.015) 42%, transparent)",
                         borderTop: index === 0 ? "1px solid rgba(91,141,239,.24)" : "1px solid rgba(255,255,255,.05)",
                         borderBottom: "1px solid rgba(255,255,255,.05)",
                         overflow: "hidden",
+                        clipPath: index % 2 === 0
+                          ? "polygon(0 0, 100% 0, 100% 100%, 2% 100%)"
+                          : "polygon(0 0, 98% 0, 100% 100%, 0 100%)",
                       }}
                     >
                       <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 4, background: "linear-gradient(180deg, var(--ac), rgba(110,193,255,.18))" }} />
@@ -340,7 +386,7 @@ export default function ProjectHome({
                           ))}
                         </div>
 
-                        <div style={{ display: "flex", gap: 8, justifySelf: "end" }}>
+                        <div style={{ display: "flex", gap: 8, justifySelf: "end", flexWrap: "wrap" }}>
                           <button
                             onClick={() => onOpenProject(project)}
                             style={{
@@ -353,6 +399,18 @@ export default function ProjectHome({
                             }}
                           >
                             開く
+                          </button>
+                          <button
+                            onClick={() => handleRename(project)}
+                            style={{
+                              padding: "9px 12px",
+                              border: "1px solid var(--bd2)",
+                              background: "rgba(255,255,255,.04)",
+                              color: "var(--tp)",
+                              fontSize: 11,
+                            }}
+                          >
+                            名前変更
                           </button>
                           <button
                             onClick={() => handleDelete(project.id)}
@@ -382,6 +440,7 @@ export default function ProjectHome({
               padding: "18px 18px 16px",
               background: "linear-gradient(180deg, rgba(19,21,26,.9), rgba(19,21,26,.76))",
               borderTop: "1px solid rgba(91,141,239,.22)",
+              clipPath: "polygon(0 0, 100% 0, 100% 100%, 8% 100%)",
             }}
           >
             <div style={{ fontFamily: "var(--ff)", fontSize: 18, marginBottom: 12 }}>作業の流れ</div>

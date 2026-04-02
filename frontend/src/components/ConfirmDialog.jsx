@@ -21,10 +21,15 @@ export default function ConfirmDialog({
   confirmColor = "var(--rd)",
   confirmBg    = "var(--rdd)",
   confirmBorder= "rgba(224,91,91,.35)",
+  secondaryLabel = "",
+  secondaryColor = "var(--ts)",
+  secondaryBg = "var(--s2)",
+  secondaryBorder = "var(--bd2)",
   inputLabel = "入力",
   inputPlaceholder = "",
   inputInitialValue = "",
   onConfirm,
+  onSecondary,
   onCancel,
 }) {
   const cancelRef = useRef(null);
@@ -114,6 +119,23 @@ export default function ConfirmDialog({
         )}
         {/* ボタン行 */}
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+          {secondaryLabel ? (
+            <button
+              onClick={onSecondary}
+              style={{
+                padding: "7px 16px",
+                border: `1px solid ${secondaryBorder}`,
+                borderRadius: "var(--r)",
+                background: secondaryBg,
+                color: secondaryColor,
+                fontFamily: "var(--fb)",
+                fontSize: 12,
+                cursor: "pointer",
+              }}
+            >
+              {secondaryLabel}
+            </button>
+          ) : null}
           <button
             ref={cancelRef}
             onClick={onCancel}

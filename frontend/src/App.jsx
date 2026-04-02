@@ -14,6 +14,7 @@ import RightPanel    from "./components/RightPanel.jsx";
 import ExportPanel   from "./components/ExportPanel.jsx";
 import AdminDashboard from "./components/AdminDashboard.jsx";
 import ProjectHome from "./components/ProjectHome.jsx";
+import { buildProjectPayload, fingerprintProjectState, saveProject } from "./utils/projectStore.js";
 
 /** リサイズハンドル（縦線） */
 function ResizeHandle({ onMouseDown, resizing }) {
@@ -45,6 +46,55 @@ export default function App() {
   const { toasts, addToast }      = useToast();
   const { confirmProps, requestConfirm, requestPrompt } = useConfirm();
   const { layout, startResizeLeft, startResizeRight, resizingLeft, resizingRight, resetLayout } = useResizableLayout();
+  const isDirty = state.generated && (!state.savedFingerprint || fingerprintProjectState(state, state.projectMeta?.name) !== state.savedFingerprint);
+
+  const persistProject = (forcedName = null) => {
+    const name = forcedName ?? state.projectMeta?.name ?? pdfFile?.name?.replace(/\.pdf$/i, "") ?? "新しいプロジェクト";
+    const payload = buildProjectPayload(state, name);
+    saveProject(payload);
+    dispatch({ type: "SET", k: "projectMeta", v: payload.data.project_meta });
+    dispatch({ type: "SET", k: "savedFingerprint", v: fingerprintProjectState(state, name) });
+    addToast("ok", `プロジェクト「${name}」を保存しました`);
+    return payload;
+  };
+
+  const saveCurrentProject = (afterSave = null) => {
+    if (state.projectMeta?.name) {
+      persistProject(state.projectMeta.name);
+      afterSave?.();
+      return;
+    }
+    const defaultName = pdfFile?.name?.replace(/\.pdf$/i, "") ?? "新しいプロジェクト";
+    requestPrompt({
+      title: "プロジェクトを保存",
+      message: "保存するプロジェクト名を入力してください。",
+      confirmLabel: "保存する",
+      inputLabel: "プロジェクト名",
+      inputInitialValue: defaultName,
+      inputPlaceholder: "例: パターン認識の講義",
+      onConfirm: (value) => {
+        const name = String(value ?? "").trim();
+        if (!name) return;
+        persistProject(name);
+        afterSave?.();
+      },
+    });
+  };
+
+  const confirmDirtyAction = (proceed, actionLabel) => {
+    if (!isDirty) {
+      proceed();
+      return;
+    }
+    requestConfirm({
+      title: "未保存の変更があります",
+      message: `未保存の編集があります。\n${actionLabel}前に保存しますか？`,
+      confirmLabel: "保存して続行",
+      secondaryLabel: "保存せず続行",
+      onSecondary: proceed,
+      onConfirm: () => saveCurrentProject(proceed),
+    });
+  };
 
   // ── リセット確認 ──
   const handleReset = () => {
@@ -54,38 +104,44 @@ export default function App() {
       setStudioScreen("home");
       return;
     }
-    requestConfirm({
-      title:        "リセット",
-      message:      "現在の講義データをすべて削除します。\n保存が必要な場合は「書き出し」からJSONをエクスポートしてください。",
-      confirmLabel: "リセット",
-      confirmColor: "var(--am)",
-      confirmBg:    "var(--amd)",
-      confirmBorder:"rgba(232,169,75,.35)",
-      onConfirm: () => {
-        dispatch({ type: "RESET" });
-        setPdfFile(null);
-        setStudioScreen("home");
-      },
-    });
+    confirmDirtyAction(() => {
+      requestConfirm({
+        title:        "リセット",
+        message:      "現在の講義データをすべて削除します。\n保存が必要な場合は「書き出し」からJSONをエクスポートしてください。",
+        confirmLabel: "リセット",
+        confirmColor: "var(--am)",
+        confirmBg:    "var(--amd)",
+        confirmBorder:"rgba(232,169,75,.35)",
+        onConfirm: () => {
+          dispatch({ type: "RESET" });
+          setPdfFile(null);
+          setStudioScreen("home");
+        },
+      });
+    }, "リセット");
   };
 
   const handleCreateProject = (nextPdfFile = null) => {
-    dispatch({ type: "RESET" });
-    setPdfFile(nextPdfFile);
-    setTab("editor");
-    setStudioScreen("editor");
-    if (nextPdfFile) {
-      addToast("in", `📑 ${nextPdfFile.name}`);
-    }
+    confirmDirtyAction(() => {
+      dispatch({ type: "RESET" });
+      setPdfFile(nextPdfFile);
+      setTab("editor");
+      setStudioScreen("editor");
+      if (nextPdfFile) {
+        addToast("in", `📑 ${nextPdfFile.name}`);
+      }
+    }, "新規作成");
   };
 
   const handleOpenProject = (project) => {
     if (!project?.data) return;
-    dispatch({ type: "LOAD", d: project.data });
-    setPdfFile(null);
-    setTab("editor");
-    setStudioScreen("editor");
-    addToast("ok", `プロジェクト「${project.name}」を読み込みました`);
+    confirmDirtyAction(() => {
+      dispatch({ type: "LOAD", d: project.data });
+      setPdfFile(null);
+      setTab("editor");
+      setStudioScreen("editor");
+      addToast("ok", `プロジェクト「${project.name}」を読み込みました`);
+    }, "別のプロジェクトを開く");
   };
 
   const goHome = () => {
@@ -333,6 +389,7 @@ export default function App() {
           onResumeEditing={() => setStudioScreen("editor")}
           currentProject={state.generated ? { name: state.projectMeta?.name ?? "編集中のプロジェクト", data: { slides: state.slides, sentences: state.sents, highlights: state.hls, mode: state.appMode } } : null}
           requestConfirm={requestConfirm}
+          requestPrompt={requestPrompt}
           addToast={addToast}
         />
       ) : (
@@ -355,7 +412,7 @@ export default function App() {
           <div style={{ position: "absolute", inset: 0, background: "linear-gradient(90deg, rgba(255,255,255,.02) 1px, transparent 1px), linear-gradient(180deg, rgba(255,255,255,.015) 1px, transparent 1px)", backgroundSize: "32px 32px", opacity: 0.12, pointerEvents: "none" }} />
 
         {/* 左パネル（幅可変） */}
-        <div style={{ width: layout.leftWidth, minWidth: layout.leftWidth, maxWidth: layout.leftWidth, overflow: "hidden", flexShrink: 0 }}>
+        <div style={{ width: layout.leftWidth, minWidth: layout.leftWidth, maxWidth: layout.leftWidth, overflow: "hidden", flexShrink: 0, minHeight: 0, display: "flex" }}>
           <LeftPanel
             state={state}
             dispatch={dispatch}
@@ -363,8 +420,9 @@ export default function App() {
             setPdfFile={setPdfFile}
             addToast={addToast}
             requestConfirm={requestConfirm}
-            requestPrompt={requestPrompt}
             handleReset={handleReset}
+            saveProjectNow={saveCurrentProject}
+            isDirty={isDirty}
           />
         </div>
 
@@ -378,7 +436,7 @@ export default function App() {
         <ResizeHandle onMouseDown={startResizeRight} resizing={resizingRight} />
 
         {/* 右パネル（幅可変） — タブ付き */}
-        <div style={{ width: layout.rightWidth, minWidth: layout.rightWidth, maxWidth: layout.rightWidth, overflow: "hidden", flexShrink: 0 }}>
+        <div style={{ width: layout.rightWidth, minWidth: layout.rightWidth, maxWidth: layout.rightWidth, overflow: "hidden", flexShrink: 0, minHeight: 0, display: "flex" }}>
           <RightPanel
             state={state}
             dispatch={dispatch}

@@ -19,6 +19,7 @@ export const INITIAL_STATE = {
   baseline:  null,
   projectMeta: null,
   previewFrame: { width: 1600, height: 900, aspect_ratio: 16 / 9 },
+  savedFingerprint: null,
 
   // ナビゲーション
   curSl:    0,
@@ -186,6 +187,7 @@ function snapshotHistoryState(state) {
     baseline: state.baseline,
     projectMeta: state.projectMeta,
     previewFrame: state.previewFrame,
+    savedFingerprint: state.savedFingerprint,
     curSl: state.curSl,
     selSent: state.selSent,
     selHl: state.selHl,
@@ -254,6 +256,28 @@ export function reducer(state, action) {
       // ロードされたデータに mode が含まれていれば appMode も上書き
       const appMode = action.d.mode ?? state.appMode;
       const previewFrame = savedSettings?.preview_frame ?? derivePreviewFrame(action.d.slides ?? []);
+      const savedFingerprint = JSON.stringify({
+        slides: action.d.slides ?? [],
+        sentences: action.d.sentences ?? [],
+        highlights: action.d.highlights ?? [],
+        total_duration: action.d.total_duration ?? totDur,
+        mode: appMode,
+        generation_ref: action.d.generation_ref ?? null,
+        settings: savedSettings
+          ? { ...savedSettings, preview_frame: previewFrame }
+          : {
+              detail: state.detail,
+              level: state.level,
+              prev_mode: appMode === "audio" ? "audio" : appMode === "video" ? "plain" : "hl",
+              play_speed: state.playSpeed,
+              preview_frame: previewFrame,
+            },
+        project_meta: {
+          id: action.d.project_meta?.id ?? null,
+          name: action.d.project_meta?.name ?? null,
+          created_at: action.d.project_meta?.created_at ?? null,
+        },
+      });
       const prevMode = savedSettings?.prev_mode
         ?? (appMode === "audio" ? "audio" : appMode === "video" ? "plain" : "hl");
       const baseline = buildBaseline(action.d, appMode);
@@ -280,6 +304,7 @@ export function reducer(state, action) {
         baseline,
         projectMeta: action.d.project_meta ?? state.projectMeta ?? null,
         previewFrame,
+        savedFingerprint,
         historyPast: [],
         historyFuture: [],
         opLogs:    appendLog(

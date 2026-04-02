@@ -30,7 +30,7 @@ export default function RightPanel({ state, dispatch, addToast, requestConfirm, 
   });
 
   return (
-    <aside style={{ display: "flex", flexDirection: "column", overflow: "hidden", flexShrink: 0, background: "linear-gradient(180deg, rgba(19,21,26,.92), rgba(19,21,26,.82))", borderLeft: "1px solid rgba(255,255,255,.05)", minHeight: 0, position: "relative" }}>
+    <aside style={{ display: "flex", flexDirection: "column", overflow: "hidden", flexShrink: 0, background: "linear-gradient(180deg, rgba(19,21,26,.92), rgba(19,21,26,.82))", borderLeft: "1px solid rgba(255,255,255,.05)", minHeight: 0, position: "relative", width: "100%", height: "100%" }}>
       <div style={{ position: "absolute", top: 0, right: 0, width: 90, height: 16, background: "linear-gradient(270deg, rgba(110,193,255,.22), transparent)", pointerEvents: "none" }} />
 
       {/* ── タブ ── */}
@@ -63,7 +63,7 @@ export default function RightPanel({ state, dispatch, addToast, requestConfirm, 
             </div>
           </div>
 
-          <div style={{ flex: 1, minHeight: 0, overflowY: "auto", scrollbarGutter: "stable", overscrollBehavior: "contain", background: "linear-gradient(180deg, rgba(255,255,255,.01), transparent 14%)" }}>
+          <div style={{ flex: 1, minHeight: 0, overflowY: "auto", scrollbarGutter: "stable", overscrollBehavior: "contain", background: "linear-gradient(180deg, rgba(255,255,255,.01), transparent 14%)", paddingBottom: 12 }}>
             {curSents.length === 0 ? (
               <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 28, color: "var(--tm)", fontSize: 11, gap: 5, textAlign: "center" }}>
                 <div style={{ fontSize: 24, opacity: 0.4 }}>📝</div>
