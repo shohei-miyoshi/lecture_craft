@@ -339,6 +339,7 @@ export default function SlideCanvas({ state, dispatch, addToast, requestConfirm 
           <HlBox
             key={hl.id}
             hl={hl}
+            slideHighlights={curHls}
             isSel={hl.id === state.selHl}
             isActive={!!(actSent && (hl.sentence_ids ?? []).includes(actSent.id))}
             isPlaying={state.playing}

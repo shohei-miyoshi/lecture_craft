@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import HlEditor     from "./HlEditor.jsx";
 import AiPanel      from "./AiPanel.jsx";
 import { fmt } from "../utils/helpers.js";
+import { getHighlightRegionMeta } from "../utils/highlightPresentation.js";
 
 export default function SentenceCard({
   sent, idx, hl, isSel, isPlay, drawMode, drawSentId,
@@ -51,15 +52,11 @@ export default function SentenceCard({
     });
   };
 
-  const linkedCount = (hl?.sentence_ids ?? []).length;
-  const railLabel = hl
-    ? linkedCount > 1
-      ? `共\n有\n${linkedCount}`
-      : "対\n応\n済"
-    : "未\n対\n応";
-  const railColor = hl ? "var(--tp)" : "var(--tm)";
+  const regionMeta = getHighlightRegionMeta(slideHighlights, hl?.id);
+  const railLabel = hl ? regionMeta.label : "HLなし";
+  const railColor = hl ? regionMeta.color : "var(--tm)";
   const railBg = hl
-    ? "linear-gradient(180deg, rgba(110,193,255,.18), rgba(255,255,255,.03))"
+    ? `linear-gradient(180deg, ${regionMeta.bgStrong}, rgba(255,255,255,.03))`
     : "var(--s3)";
 
   return (
@@ -88,12 +85,13 @@ export default function SentenceCard({
             background: railBg,
             color: railColor,
             fontFamily: "var(--fm)",
-            fontSize: 9,
-            whiteSpace: "pre-line",
-            lineHeight: 1.15,
+            fontSize: 10,
+            writingMode: "vertical-rl",
+            textOrientation: "mixed",
+            letterSpacing: ".06em",
             cursor: "pointer",
             textAlign: "center",
-            padding: "8px 2px",
+            padding: "8px 4px",
           }}
         >
           {railLabel}

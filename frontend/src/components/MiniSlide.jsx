@@ -1,11 +1,12 @@
 import { useMemo, useRef } from "react";
-import { KIND_BG, KIND_COLOR } from "../utils/constants.js";
 import { getContainRect } from "../utils/imageFrame.js";
+import { getHighlightRegionMeta } from "../utils/highlightPresentation.js";
 
-export default function MiniSlide({ hl, slide, dispatch }) {
+export default function MiniSlide({ hl, slide, dispatch, slideHighlights = [] }) {
   const ref = useRef(null);
-  const c = KIND_COLOR[hl.kind];
-  const bg = KIND_BG[hl.kind];
+  const regionMeta = getHighlightRegionMeta(slideHighlights, hl?.id);
+  const c = regionMeta.color;
+  const bg = regionMeta.bg;
   const imageSize = {
     width: Number(slide?.width ?? 1600) || 1600,
     height: Number(slide?.height ?? 900) || 900,
@@ -129,10 +130,15 @@ export default function MiniSlide({ hl, slide, dispatch }) {
           />
         </div>
       </div>
-      <div style={{ fontSize: 9, color: "var(--tm)", textAlign: "center", marginTop: 4, lineHeight: 1.4 }}>
-        {imageSize.width > 0 && imageSize.height > 0
-          ? `${imageSize.width}×${imageSize.height}`
-          : "実スライド比率で表示"}
+      <div style={{ textAlign: "center", marginTop: 4, lineHeight: 1.4 }}>
+        <div style={{ fontSize: 10, color: c, fontFamily: "var(--fm)", marginBottom: 2 }}>
+          {regionMeta.label}
+        </div>
+        <div style={{ fontSize: 9, color: "var(--tm)" }}>
+          {imageSize.width > 0 && imageSize.height > 0
+            ? `${imageSize.width}×${imageSize.height}`
+            : "実スライド比率で表示"}
+        </div>
       </div>
     </div>
   );

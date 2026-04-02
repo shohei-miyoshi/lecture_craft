@@ -1,4 +1,4 @@
-import { KIND_COLOR, KIND_BG, KIND_BG_SEL } from "../utils/constants.js";
+import { getHighlightRegionMeta } from "../utils/highlightPresentation.js";
 
 /**
  * HlBox — スライドキャンバス上のハイライトボックス
@@ -27,11 +27,12 @@ const HANDLE_POS = {
 export const HL_PULSE_CSS = `
 @keyframes hlpulse_ac{0%{box-shadow:0 0 0 0 rgba(91,141,239,.6)}70%{box-shadow:0 0 0 8px rgba(91,141,239,0)}100%{box-shadow:0 0 0 0 rgba(91,141,239,0)}}
 `;
-const PULSE_ANIM = { marker:"hlpulse_ac", arrow:"hlpulse_ac", box:"hlpulse_ac" };
+const PULSE_ANIM = "hlpulse_ac";
 
-export default function HlBox({ hl, isSel, isActive, isPlaying, frame, dispatch, requestConfirm }) {
-  const c   = KIND_COLOR[hl.kind];
-  const bg  = isActive ? KIND_BG_SEL[hl.kind] : KIND_BG[hl.kind];
+export default function HlBox({ hl, isSel, isActive, isPlaying, frame, dispatch, requestConfirm, slideHighlights = [] }) {
+  const regionMeta = getHighlightRegionMeta(slideHighlights, hl?.id);
+  const c   = regionMeta.color;
+  const bg  = isActive ? regionMeta.bgStrong : regionMeta.bg;
   const leftPx = frame.left + (frame.width * hl.x) / 100;
   const topPx = frame.top + (frame.height * hl.y) / 100;
   const widthPx = (frame.width * hl.w) / 100;
@@ -40,7 +41,7 @@ export default function HlBox({ hl, isSel, isActive, isPlaying, frame, dispatch,
   // 再生中：アクティブBB=不透明、非アクティブBB=薄く
   const opacity  = isPlaying ? (isActive ? 1 : 0.28) : 1;
   const animation = isActive && isPlaying
-    ? `${PULSE_ANIM[hl.kind]} 1.4s ease-in-out infinite`
+    ? `${PULSE_ANIM} 1.4s ease-in-out infinite`
     : "none";
   const borderWidth = isActive && isPlaying ? 3 : 2;
 
@@ -103,7 +104,7 @@ export default function HlBox({ hl, isSel, isActive, isPlaying, frame, dispatch,
       {/* ラベル（アクティブか選択時のみ） */}
       {(isActive || isSel) && (
         <div style={{ position: "absolute", top: -17, left: 0, background: c, color: "#fff", fontFamily: "var(--fm)", fontSize: 8, padding: "1px 5px", borderRadius: 2, pointerEvents: "none", whiteSpace: "nowrap" }}>
-          {(hl.sentence_ids ?? []).length > 0 ? `${(hl.sentence_ids ?? []).length}文対応` : "未対応"}
+          {regionMeta.label}
         </div>
       )}
       {/* 削除ボタン（停止中・選択時のみ） */}
