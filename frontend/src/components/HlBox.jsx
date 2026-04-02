@@ -1,4 +1,4 @@
-import { KIND_COLOR, KIND_BG, KIND_BG_SEL, KIND_LABEL } from "../utils/constants.js";
+import { KIND_COLOR, KIND_BG, KIND_BG_SEL } from "../utils/constants.js";
 
 /**
  * HlBox — スライドキャンバス上のハイライトボックス
@@ -26,12 +26,10 @@ const HANDLE_POS = {
 // 種別ごとのパルスアニメーション用CSS（index.cssに追加）
 export const HL_PULSE_CSS = `
 @keyframes hlpulse_ac{0%{box-shadow:0 0 0 0 rgba(91,141,239,.6)}70%{box-shadow:0 0 0 8px rgba(91,141,239,0)}100%{box-shadow:0 0 0 0 rgba(91,141,239,0)}}
-@keyframes hlpulse_gr{0%{box-shadow:0 0 0 0 rgba(76,175,130,.6)}70%{box-shadow:0 0 0 8px rgba(76,175,130,0)}100%{box-shadow:0 0 0 0 rgba(76,175,130,0)}}
-@keyframes hlpulse_am{0%{box-shadow:0 0 0 0 rgba(232,169,75,.6)}70%{box-shadow:0 0 0 8px rgba(232,169,75,0)}100%{box-shadow:0 0 0 0 rgba(232,169,75,0)}}
 `;
-const PULSE_ANIM = { marker:"hlpulse_ac", arrow:"hlpulse_gr", box:"hlpulse_am" };
+const PULSE_ANIM = { marker:"hlpulse_ac", arrow:"hlpulse_ac", box:"hlpulse_ac" };
 
-export default function HlBox({ hl, isSel, isActive, isPlaying, wrapRef, dispatch }) {
+export default function HlBox({ hl, isSel, isActive, isPlaying, wrapRef, dispatch, requestConfirm }) {
   const c   = KIND_COLOR[hl.kind];
   const bg  = isActive ? KIND_BG_SEL[hl.kind] : KIND_BG[hl.kind];
 
@@ -100,12 +98,28 @@ export default function HlBox({ hl, isSel, isActive, isPlaying, wrapRef, dispatc
       {/* ラベル（アクティブか選択時のみ） */}
       {(isActive || isSel) && (
         <div style={{ position: "absolute", top: -17, left: 0, background: c, color: "#fff", fontFamily: "var(--fm)", fontSize: 8, padding: "1px 5px", borderRadius: 2, pointerEvents: "none", whiteSpace: "nowrap" }}>
-          {KIND_LABEL[hl.kind]}
+          {(hl.sentence_ids ?? []).length > 0 ? `${(hl.sentence_ids ?? []).length}文対応` : "未対応"}
         </div>
       )}
       {/* 削除ボタン（停止中・選択時のみ） */}
       {isSel && !isPlaying && (
-        <div data-hl-interactive="1" onClick={(e) => { e.stopPropagation(); dispatch({ type: "RM_HL_ID", v: hl.id }); }}
+        <div data-hl-interactive="1" onClick={(e) => {
+          e.stopPropagation();
+          const run = () => {
+            dispatch({ type: "PUSH_HISTORY" });
+            dispatch({ type: "RM_HL_ID", v: hl.id });
+          };
+          if ((hl.sentence_ids ?? []).length > 1) {
+            requestConfirm?.({
+              title: "共有ハイライト枠を削除",
+              message: `この枠は ${(hl.sentence_ids ?? []).length} 個の台本と対応しています。\n削除すると関連する対応も一緒に消えますが、大丈夫ですか？`,
+              confirmLabel: "削除する",
+              onConfirm: run,
+            });
+            return;
+          }
+          run();
+        }}
           style={{ position: "absolute", top: -17, right: 0, width: 16, height: 16, background: "var(--rdd)", border: "1px solid var(--rd)", borderRadius: 3, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, color: "var(--rd)", cursor: "pointer" }}>
           ×
         </div>

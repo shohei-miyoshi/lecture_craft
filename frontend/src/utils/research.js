@@ -19,15 +19,16 @@ function sanitizeSentence(sentence) {
 }
 
 function sanitizeHighlight(highlight) {
+  const normalized = normalizeHighlight(highlight ?? {});
   return {
-    id: highlight?.id ?? null,
-    sid: highlight?.sid ?? null,
-    slide_idx: highlight?.slide_idx ?? 0,
-    kind: highlight?.kind ?? "marker",
-    x: highlight?.x ?? 0,
-    y: highlight?.y ?? 0,
-    w: highlight?.w ?? 0,
-    h: highlight?.h ?? 0,
+    id: normalized.id,
+    sentence_ids: normalized.sentence_ids,
+    slide_idx: normalized.slide_idx,
+    kind: normalized.kind,
+    x: normalized.x,
+    y: normalized.y,
+    w: normalized.w,
+    h: normalized.h,
   };
 }
 
@@ -50,7 +51,7 @@ function sameSentence(a, b) {
 
 function sameHighlight(a, b) {
   return (
-    a?.sid === b?.sid
+    JSON.stringify(a?.sentence_ids ?? []) === JSON.stringify(b?.sentence_ids ?? [])
     && a?.slide_idx === b?.slide_idx
     && a?.kind === b?.kind
     && Number(a?.x ?? 0) === Number(b?.x ?? 0)
@@ -71,7 +72,7 @@ function changedSentenceFields(before, after) {
 
 function changedHighlightFields(before, after) {
   const fields = [];
-  if (before.sid !== after.sid) fields.push("sid");
+  if (JSON.stringify(before.sentence_ids ?? []) !== JSON.stringify(after.sentence_ids ?? [])) fields.push("sentence_ids");
   if (before.slide_idx !== after.slide_idx) fields.push("slide_idx");
   if (before.kind !== after.kind) fields.push("kind");
   if (Number(before.x ?? 0) !== Number(after.x ?? 0)) fields.push("x");
@@ -196,3 +197,4 @@ export function buildResearchSnapshot(state, trigger, extra = {}) {
     extensions: extra.extensions ?? {},
   };
 }
+import { normalizeHighlight } from "./highlights.js";

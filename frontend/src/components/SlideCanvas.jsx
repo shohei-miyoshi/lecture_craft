@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import HlBox from "./HlBox.jsx";
 import { rn } from "../utils/helpers.js";
+import { findHighlightForSentence } from "../utils/highlights.js";
 
 const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 3;
@@ -26,7 +27,7 @@ function clampPan(nextPan, zoom, baseSize) {
   };
 }
 
-export default function SlideCanvas({ state, dispatch, addToast }) {
+export default function SlideCanvas({ state, dispatch, addToast, requestConfirm }) {
   const viewportRef = useRef(null);
   const stageRef = useRef(null);
   const drawRef = useRef(null);
@@ -160,10 +161,6 @@ export default function SlideCanvas({ state, dispatch, addToast }) {
   const onStageDoubleClick = (e) => {
     if (state.drawMode || !showBB) return;
     const selectedSentence = state.sents.find((s) => s.id === state.selSent);
-    if (!selectedSentence || selectedSentence.slide_idx !== state.curSl) {
-      addToast?.("in", "先にこのスライド上の文を選択してから、ダブルクリックで枠を追加してください");
-      return;
-    }
     const rc = stageRef.current?.getBoundingClientRect();
     if (!rc) return;
     const cx = ((e.clientX - rc.left) / rc.width) * 100;
@@ -174,10 +171,11 @@ export default function SlideCanvas({ state, dispatch, addToast }) {
       w: 16,
       h: 12,
     };
-    const kind = state.hls.find((h) => h.sid === selectedSentence.id)?.kind ?? "marker";
+    const sid = selectedSentence && selectedSentence.slide_idx === state.curSl ? selectedSentence.id : null;
+    const kind = sid ? findHighlightForSentence(state.hls, sid)?.kind ?? "marker" : "marker";
     dispatch({ type: "PUSH_HISTORY" });
-    dispatch({ type: "APPLY_REGION", sid: selectedSentence.id, region, kind });
-    addToast?.("ok", "選択中の文にハイライト枠を追加しました");
+    dispatch({ type: "ADD_HL_BOX", sid, slide_idx: state.curSl, region, kind });
+    addToast?.("ok", sid ? "選択中の文にハイライト枠を追加しました" : "未対応のハイライト枠を追加しました");
   };
 
   useEffect(() => {
@@ -213,8 +211,8 @@ export default function SlideCanvas({ state, dispatch, addToast }) {
       dispatch({ type: "SET", k: "drawSentId", v: null });
       if (region.w < 2 || region.h < 2) return;
       if (state.drawSentId) {
-        const kind = state.hls.find((h) => h.sid === state.drawSentId)?.kind ?? "marker";
-        dispatch({ type: "APPLY_REGION", sid: state.drawSentId, region, kind });
+        const kind = findHighlightForSentence(state.hls, state.drawSentId)?.kind ?? "marker";
+        dispatch({ type: "ADD_HL_BOX", sid: state.drawSentId, slide_idx: state.curSl, region, kind });
       }
     };
     document.addEventListener("mousemove", onMove);
@@ -282,7 +280,7 @@ export default function SlideCanvas({ state, dispatch, addToast }) {
         {naturalSize.width > 0 && naturalSize.height > 0
           ? `${naturalSize.width}×${naturalSize.height} | `
           : ""}
-        Zoom {Math.round(zoom * 100)}%
+        拡大率 {Math.round(zoom * 100)}%
       </div>
 
       <div
@@ -326,10 +324,11 @@ export default function SlideCanvas({ state, dispatch, addToast }) {
             key={hl.id}
             hl={hl}
             isSel={hl.id === state.selHl}
-            isActive={!!(actSent && hl.sid === actSent.id)}
+            isActive={!!(actSent && (hl.sentence_ids ?? []).includes(actSent.id))}
             isPlaying={state.playing}
             wrapRef={stageRef}
             dispatch={dispatch}
+            requestConfirm={requestConfirm}
           />
         ))}
 

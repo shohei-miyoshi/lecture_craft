@@ -1,5 +1,6 @@
 import { API_URL, DETAIL_VALS, DIFF_VALS } from "../utils/constants.js";
 import { fmt } from "../utils/helpers.js";
+import { buildSentenceHighlightsForExport } from "../utils/highlights.js";
 import { buildResearchSnapshot } from "../utils/research.js";
 
 const EXPORT_ROWS = [
@@ -46,6 +47,7 @@ export default function ExportPanel({ state, dispatch, addToast }) {
 
   const doExport = async (type) => {
     if (!state.generated) { addToast("er", "先に生成してください"); return; }
+    const exportHighlights = buildSentenceHighlightsForExport(state.hls, state.sents);
 
     // ── JSON エクスポート（フロントのみ） ──
     if (type === "json") {
@@ -114,7 +116,7 @@ export default function ExportPanel({ state, dispatch, addToast }) {
           mode: state.appMode,
           slides: state.slides,
           sentences: state.sents,
-          highlights: state.hls,
+          highlights: exportHighlights,
           operation_logs: state.opLogs,
           session_id: state.sessionId,
           source_cache_key: state.genRef?.cache_key ?? null,

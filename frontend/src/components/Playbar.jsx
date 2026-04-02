@@ -22,7 +22,8 @@ export default function Playbar({ state, dispatch, hideSlideNav = false }) {
   // HL位置のティックマーク（HLありモードのみ）
   const ticks = appMode === "hl"
     ? hls.map((h) => {
-        const s = sents.find((s) => s.id === h.sid);
+        const sid = h.sentence_ids?.[0];
+        const s = sents.find((row) => row.id === sid);
         return s && totDur ? (s.start_sec / totDur) * 100 : null;
       }).filter((v) => v !== null)
     : [];

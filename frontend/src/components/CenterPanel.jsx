@@ -8,7 +8,7 @@ import { usePlayback } from "../hooks/usePlayback.js";
  * - HLありモード（appMode==="hl"）のときのみ HL/plain 切替を表示
  * - タブ（エディタ/書き出し）は右パネル側に移動したため、ここでは持たない
  */
-export default function CenterPanel({ state, dispatch, addToast }) {
+export default function CenterPanel({ state, dispatch, addToast, requestConfirm }) {
   usePlayback(state, dispatch);
 
   const isAudio = state.appMode === "audio";
@@ -78,7 +78,7 @@ export default function CenterPanel({ state, dispatch, addToast }) {
         <AudioView state={state} />
       ) : (
         <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: 14, overflow: "hidden" }}>
-          <SlideCanvas state={state} dispatch={dispatch} addToast={addToast} />
+          <SlideCanvas state={state} dispatch={dispatch} addToast={addToast} requestConfirm={requestConfirm} />
         </div>
       )}
 

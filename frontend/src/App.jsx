@@ -73,6 +73,31 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    const onMouseSide = (e) => {
+      if (view === "admin") return;
+      if (e.button === 3) {
+        e.preventDefault();
+        e.stopPropagation();
+        dispatch({ type: "UNDO" });
+      } else if (e.button === 4) {
+        e.preventDefault();
+        e.stopPropagation();
+        dispatch({ type: "REDO" });
+      }
+    };
+    window.addEventListener("mousedown", onMouseSide, true);
+    window.addEventListener("mouseup", onMouseSide, true);
+    window.addEventListener("click", onMouseSide, true);
+    window.addEventListener("auxclick", onMouseSide, true);
+    return () => {
+      window.removeEventListener("mousedown", onMouseSide, true);
+      window.removeEventListener("mouseup", onMouseSide, true);
+      window.removeEventListener("click", onMouseSide, true);
+      window.removeEventListener("auxclick", onMouseSide, true);
+    };
+  }, [view]);
+
+  useEffect(() => {
     const handler = (e) => {
       if (view === "admin") return;
       if (["INPUT", "TEXTAREA"].includes(e.target.tagName) || e.target.contentEditable === "true") return;
@@ -138,7 +163,23 @@ export default function App() {
           dispatch({ type: "SET", k: "playing", v: false });
           break;
         case "Delete":
-          if (state.selHl) dispatch({ type: "RM_HL_ID", v: state.selHl });
+          if (state.selHl) {
+            const target = state.hls.find((hl) => hl.id === state.selHl);
+            const run = () => {
+              dispatch({ type: "PUSH_HISTORY" });
+              dispatch({ type: "RM_HL_ID", v: state.selHl });
+            };
+            if (target && (target.sentence_ids ?? []).length > 1) {
+              requestConfirm({
+                title: "共有ハイライト枠を削除",
+                message: `この枠は ${(target.sentence_ids ?? []).length} 個の台本と対応しています。\n削除すると関連する対応も一緒に消えますが、大丈夫ですか？`,
+                confirmLabel: "削除する",
+                onConfirm: run,
+              });
+            } else {
+              run();
+            }
+          }
           break;
       }
     };
@@ -163,8 +204,8 @@ export default function App() {
         <div style={{ width: 1, height: 18, background: "var(--bd)" }} />
         <div style={{ display: "inline-flex", padding: 3, borderRadius: 999, background: "var(--s2)", border: "1px solid var(--bd)" }}>
           {[
-            ["studio", "Studio"],
-            ["admin", "Admin"],
+            ["studio", "編集"],
+            ["admin", "管理"],
           ].map(([key, label]) => (
             <button
               key={key}
@@ -214,6 +255,7 @@ export default function App() {
             setPdfFile={setPdfFile}
             addToast={addToast}
             requestConfirm={requestConfirm}
+            handleReset={handleReset}
           />
         </div>
 
@@ -221,7 +263,7 @@ export default function App() {
         <ResizeHandle onMouseDown={startResizeLeft} resizing={resizingLeft} />
 
         {/* 中央パネル（残り幅を占有） */}
-        <CenterPanel state={state} dispatch={dispatch} addToast={addToast} />
+        <CenterPanel state={state} dispatch={dispatch} addToast={addToast} requestConfirm={requestConfirm} />
 
         {/* 右ハンドル */}
         <ResizeHandle onMouseDown={startResizeRight} resizing={resizingRight} />

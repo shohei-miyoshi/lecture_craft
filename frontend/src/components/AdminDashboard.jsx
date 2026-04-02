@@ -140,7 +140,7 @@ export default function AdminDashboard({ addToast }) {
       <div style={{ maxWidth: 1320, margin: "0 auto", padding: "22px 22px 40px" }}>
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, marginBottom: 18 }}>
           <div>
-            <div style={{ fontFamily: "var(--ff)", fontSize: 26, lineHeight: 1.05, marginBottom: 8 }}>Admin Dashboard</div>
+            <div style={{ fontFamily: "var(--ff)", fontSize: 26, lineHeight: 1.05, marginBottom: 8 }}>管理ダッシュボード</div>
             <div style={{ color: "var(--ts)", fontSize: 12, lineHeight: 1.6 }}>
               実験 run の状況、生成ジョブの利用量、export の利用状況をここでまとめて確認できます。
             </div>
@@ -162,23 +162,23 @@ export default function AdminDashboard({ addToast }) {
         ) : (
           <>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(5, minmax(0, 1fr))", gap: 12, marginBottom: 18 }}>
-              <MetricCard title="Generate Jobs" value={data?.usage?.jobs_total} hint="累計ジョブ数" accent="rgba(91,141,239,.24)" tone="var(--ac)" />
-              <MetricCard title="Last 7 Days" value={data?.usage?.jobs_last_7d} hint="直近7日" accent="rgba(76,175,130,.24)" tone="var(--gr)" />
-              <MetricCard title="Exports" value={data?.usage?.exports_total} hint="累計書き出し" accent="rgba(232,169,75,.24)" tone="var(--am)" />
-              <MetricCard title="Research Sessions" value={data?.research?.total_sessions} hint="研究ログ保存数" accent="rgba(167,139,250,.24)" tone="var(--pu)" />
-              <MetricCard title="Experiments" value={data?.experiments?.total_runs} hint="検出された run" accent="rgba(167,139,250,.24)" tone="var(--pu)" />
+              <MetricCard title="生成ジョブ" value={data?.usage?.jobs_total} hint="累計ジョブ数" accent="rgba(91,141,239,.24)" tone="var(--ac)" />
+              <MetricCard title="直近7日" value={data?.usage?.jobs_last_7d} hint="生成数" accent="rgba(76,175,130,.24)" tone="var(--gr)" />
+              <MetricCard title="書き出し" value={data?.usage?.exports_total} hint="累計書き出し" accent="rgba(232,169,75,.24)" tone="var(--am)" />
+              <MetricCard title="研究ログ" value={data?.research?.total_sessions} hint="保存セッション数" accent="rgba(167,139,250,.24)" tone="var(--pu)" />
+              <MetricCard title="実験 run" value={data?.experiments?.total_runs} hint="検出された run" accent="rgba(167,139,250,.24)" tone="var(--pu)" />
             </div>
 
             <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr 1fr 1fr", gap: 12, marginBottom: 18 }}>
-              <BreakdownList title="Jobs by Mode" items={jobsByMode} color="linear-gradient(90deg, #5b8def, #77a4ff)" />
-              <BreakdownList title="Jobs by Status" items={jobsByStatus} color="linear-gradient(90deg, #4caf82, #79d7aa)" />
-              <BreakdownList title="Exports by Type" items={exportsByType} color="linear-gradient(90deg, #e8a94b, #ffd28a)" />
-              <BreakdownList title="Research by Trigger" items={researchByTrigger} color="linear-gradient(90deg, #a78bfa, #d1c1ff)" />
+              <BreakdownList title="モード別ジョブ数" items={jobsByMode} color="linear-gradient(90deg, #5b8def, #77a4ff)" />
+              <BreakdownList title="状態別ジョブ数" items={jobsByStatus} color="linear-gradient(90deg, #4caf82, #79d7aa)" />
+              <BreakdownList title="種別別書き出し数" items={exportsByType} color="linear-gradient(90deg, #e8a94b, #ffd28a)" />
+              <BreakdownList title="トリガ別研究ログ" items={researchByTrigger} color="linear-gradient(90deg, #a78bfa, #d1c1ff)" />
             </div>
 
             <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr 1fr", gap: 12, marginBottom: 18 }}>
               <section style={{ padding: 16, borderRadius: 14, background: "var(--s2)", border: "1px solid var(--bd)" }}>
-                <div style={{ fontFamily: "var(--ff)", fontSize: 13, marginBottom: 10 }}>Usage Snapshot</div>
+                <div style={{ fontFamily: "var(--ff)", fontSize: 13, marginBottom: 10 }}>利用状況スナップショット</div>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 10 }}>
                   {[
                     ["completed_jobs", "完了ジョブ", "var(--gr)"],
@@ -197,7 +197,7 @@ export default function AdminDashboard({ addToast }) {
               </section>
 
               <section style={{ padding: 16, borderRadius: 14, background: "var(--s2)", border: "1px solid var(--bd)" }}>
-                <div style={{ fontFamily: "var(--ff)", fontSize: 13, marginBottom: 10 }}>Research Snapshot</div>
+                <div style={{ fontFamily: "var(--ff)", fontSize: 13, marginBottom: 10 }}>研究ログ集計</div>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 }}>
                   {[
                     ["highlights_modified", "HL修正", "var(--am)"],

@@ -6,6 +6,8 @@ import { fmt } from "../utils/helpers.js";
 export default function SentenceCard({
   sent, idx, hl, isSel, isPlay, drawMode, drawSentId,
   dispatch, addToast, requestConfirm,
+  slideHighlights = [],
+  slide = null,
   showHl = true,
 }) {
   const [hlOpen,     setHlOpen]     = useState(false);
@@ -49,9 +51,16 @@ export default function SentenceCard({
     });
   };
 
-  const railLabel = hl ? `HL\n${HlRailLabel(hl.kind)}` : "HL\n未設定";
+  const linkedCount = (hl?.sentence_ids ?? []).length;
+  const railLabel = hl
+    ? linkedCount > 1
+      ? `共\n有\n${linkedCount}`
+      : "対\n応\n済"
+    : "未\n対\n応";
   const railColor = hl ? "var(--tp)" : "var(--tm)";
-  const railBg = hl ? `linear-gradient(180deg, ${hlColorBg(hl.kind)}, rgba(255,255,255,.03))` : "var(--s3)";
+  const railBg = hl
+    ? "linear-gradient(180deg, rgba(110,193,255,.18), rgba(255,255,255,.03))"
+    : "var(--s3)";
 
   return (
     <div
@@ -156,7 +165,10 @@ export default function SentenceCard({
         {aiOpen && (
           <AiPanel
             text={sent.text}
-            onApply={(t) => dispatch({ type: "UPD_TXT", id: sent.id, text: t })}
+            onApply={(t) => {
+              dispatch({ type: "PUSH_HISTORY" });
+              dispatch({ type: "UPD_TXT", id: sent.id, text: t });
+            }}
             addToast={addToast}
           />
         )}
@@ -165,40 +177,18 @@ export default function SentenceCard({
           <HlEditor
             sid={sent.id}
             hl={hl}
+            sentence={sent}
+            slide={slide}
+            slideHighlights={slideHighlights}
             dispatch={dispatch}
             drawMode={drawMode}
             drawSentId={drawSentId}
+            requestConfirm={requestConfirm}
           />
         )}
       </div>
     </div>
   );
-}
-
-function HlRailLabel(kind) {
-  switch (kind) {
-    case "marker":
-      return "マー\nカー";
-    case "arrow":
-      return "矢印";
-    case "box":
-      return "囲み";
-    default:
-      return "設定";
-  }
-}
-
-function hlColorBg(kind) {
-  switch (kind) {
-    case "marker":
-      return "rgba(91,141,239,.28)";
-    case "arrow":
-      return "rgba(76,175,130,.26)";
-    case "box":
-      return "rgba(232,169,75,.26)";
-    default:
-      return "rgba(255,255,255,.04)";
-  }
 }
 
 function TimingEditor({ sent, dispatch }) {

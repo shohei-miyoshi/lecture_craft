@@ -1,4 +1,5 @@
 import SentenceCard from "./SentenceCard.jsx";
+import { findHighlightForSentence, getSlideHighlights } from "../utils/highlights.js";
 
 /**
  * 右パネル — 台本 + HL統合編集
@@ -10,6 +11,7 @@ export default function RightPanel({ state, dispatch, addToast, requestConfirm, 
   const curSents = isAudio
     ? state.sents
     : state.sents.filter((s) => s.slide_idx === state.curSl);
+  const curSlideHighlights = getSlideHighlights(state.hls, state.curSl);
   const actSent  = state.sents.find(
     (s) => s.start_sec <= state.curT && state.curT < s.end_sec
   );
@@ -45,12 +47,6 @@ export default function RightPanel({ state, dispatch, addToast, requestConfirm, 
                 {isAudio ? "台本編集" : "台本 ＋ ハイライト編集"}
               </span>
               <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <button onClick={() => dispatch({ type: "UNDO" })} style={{ display: "inline-flex", alignItems: "center", gap: 3, padding: "3px 6px", border: "1px solid var(--bd2)", borderRadius: "var(--r)", background: "var(--s2)", color: "var(--tp)", fontSize: 10 }}>
-                  ↶ 戻る
-                </button>
-                <button onClick={() => dispatch({ type: "REDO" })} style={{ display: "inline-flex", alignItems: "center", gap: 3, padding: "3px 6px", border: "1px solid var(--bd2)", borderRadius: "var(--r)", background: "var(--s2)", color: "var(--tp)", fontSize: 10 }}>
-                  ↷ 進む
-                </button>
                 <button
                   onClick={() => { dispatch({ type: "PUSH_HISTORY" }); dispatch({ type: "ADD_SENT" }); }}
                   style={{ display: "inline-flex", alignItems: "center", gap: 3, padding: "3px 6px", border: "1px solid var(--bd2)", borderRadius: "var(--r)", background: "var(--s2)", color: "var(--tp)", fontSize: 10 }}
@@ -62,7 +58,7 @@ export default function RightPanel({ state, dispatch, addToast, requestConfirm, 
             <div style={{ fontSize: 10, color: "var(--tm)", lineHeight: 1.45 }}>
               {isAudio
                 ? "文クリックで選択 → テキスト直接編集 or ✨AI修正 ／ ⏱ タイミング編集"
-                : "文クリックで選択 → テキスト直接編集 or ✨AI修正 ／ 左帯とボタンでHL設定"}
+                : "文クリックで選択 → テキスト直接編集 or ✨AI修正 ／ 左帯で状態確認・HL設定"}
             </div>
           </div>
 
@@ -78,7 +74,8 @@ export default function RightPanel({ state, dispatch, addToast, requestConfirm, 
                   key={s.id}
                   sent={s}
                   idx={i}
-                  hl={state.hls.find((h) => h.sid === s.id)}
+                  hl={findHighlightForSentence(state.hls, s.id)}
+                  slideHighlights={curSlideHighlights}
                   isSel={s.id === state.selSent}
                   isPlay={!!(actSent && actSent.id === s.id)}
                   drawMode={state.drawMode}
@@ -86,6 +83,7 @@ export default function RightPanel({ state, dispatch, addToast, requestConfirm, 
                   dispatch={dispatch}
                   addToast={addToast}
                   requestConfirm={requestConfirm}
+                  slide={state.slides[s.slide_idx]}
                   showHl={!isAudio}
                 />
               ))

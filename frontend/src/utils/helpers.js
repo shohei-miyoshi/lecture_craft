@@ -43,11 +43,11 @@ export function makeDemo() {
     { id: "s10", slide_idx: 4, text: "次回は深層学習を用いたより高度な手法について学びます。", start_sec: 58, end_sec: 63 },
   ];
   const highlights = [
-    { id: "h1", sid: "s2", slide_idx: 0, kind: "marker", x: 15, y: 28, w: 65, h: 42 },
-    { id: "h2", sid: "s3", slide_idx: 0, kind: "box",    x: 10, y: 74, w: 80, h: 16 },
-    { id: "h3", sid: "s5", slide_idx: 1, kind: "arrow",  x: 20, y: 38, w: 60, h: 32 },
-    { id: "h4", sid: "s6", slide_idx: 2, kind: "marker", x: 10, y: 20, w: 75, h: 50 },
-    { id: "h5", sid: "s8", slide_idx: 3, kind: "box",    x: 15, y: 54, w: 55, h: 26 },
+    { id: "h1", sentence_ids: ["s2"], slide_idx: 0, kind: "marker", x: 15, y: 28, w: 65, h: 42 },
+    { id: "h2", sentence_ids: ["s3"], slide_idx: 0, kind: "box",    x: 10, y: 74, w: 80, h: 16 },
+    { id: "h3", sentence_ids: ["s5"], slide_idx: 1, kind: "arrow",  x: 20, y: 38, w: 60, h: 32 },
+    { id: "h4", sentence_ids: ["s6"], slide_idx: 2, kind: "marker", x: 10, y: 20, w: 75, h: 50 },
+    { id: "h5", sentence_ids: ["s8"], slide_idx: 3, kind: "box",    x: 15, y: 54, w: 55, h: 26 },
   ];
   return { slides, sentences, highlights, total_duration: 65 };
 }

@@ -1,13 +1,16 @@
-import { useState, useRef } from "react";
+import { useMemo, useState, useRef } from "react";
 import Seg from "./Seg.jsx";
 import { DETAIL_LABELS, DIFF_LABELS, DETAIL_VALS, DIFF_VALS, API_URL } from "../utils/constants.js";
 import { toB64, makeDemo } from "../utils/helpers.js";
+import { buildProjectPayload, deleteProject, listProjects, loadProject, saveProject } from "../utils/projectStore.js";
 
 const JOB_POLL_MS = 2000;
 
-export default function LeftPanel({ state, dispatch, pdfFile, setPdfFile, addToast, requestConfirm }) {
+export default function LeftPanel({ state, dispatch, pdfFile, setPdfFile, addToast, requestConfirm, handleReset }) {
   const [drag, setDrag] = useState(false);
+  const [projectRefreshKey, setProjectRefreshKey] = useState(0);
   const fileInputRef = useRef(null); // リセット後のリセット用
+  const projects = useMemo(() => listProjects(), [projectRefreshKey, state.projectMeta]);
 
   const handleFile = (f) => {
     if (!f || f.type !== "application/pdf") return;
@@ -106,6 +109,54 @@ export default function LeftPanel({ state, dispatch, pdfFile, setPdfFile, addToa
     setTimeout(() => dispatch({ type: "SET", k: "showProg", v: false }), 800);
   };
 
+  const handleSaveProject = () => {
+    const defaultName = state.projectMeta?.name ?? pdfFile?.name?.replace(/\.pdf$/i, "") ?? "新しいプロジェクト";
+    const name = window.prompt("保存するプロジェクト名を入力してください", defaultName);
+    if (!name) return;
+    const payload = buildProjectPayload(state, name);
+    saveProject(payload);
+    dispatch({ type: "SET", k: "projectMeta", v: payload.data.project_meta });
+    setProjectRefreshKey((v) => v + 1);
+    addToast("ok", `プロジェクト「${name}」を保存しました`);
+  };
+
+  const doLoadProject = (projectId) => {
+    const project = loadProject(projectId);
+    if (!project) return;
+    dispatch({ type: "LOAD", d: project.data });
+    setPdfFile(null);
+    addToast("ok", `プロジェクト「${project.name}」を読み込みました`);
+  };
+
+  const handleLoadProject = (projectId) => {
+    if (!state.generated) {
+      doLoadProject(projectId);
+      return;
+    }
+    const project = loadProject(projectId);
+    if (!project) return;
+    requestConfirm({
+      title: "プロジェクトを読み込む",
+      message: `現在の編集中データを閉じて「${project.name}」を読み込みますか？\n未保存の変更は失われます。`,
+      confirmLabel: "読み込む",
+      onConfirm: () => doLoadProject(projectId),
+    });
+  };
+
+  const handleDeleteProject = (projectId) => {
+    const project = loadProject(projectId);
+    if (!project) return;
+    requestConfirm({
+      title: "プロジェクトを削除",
+      message: `「${project.name}」をローカル保存から削除しますか？`,
+      confirmLabel: "削除",
+      onConfirm: () => {
+        deleteProject(projectId);
+        setProjectRefreshKey((v) => v + 1);
+      },
+    });
+  };
+
   const statusStyle = {
     idle: { background: "var(--s2)",  color: "var(--tm)" },
     proc: { background: "var(--amd)", border: "1px solid rgba(232,169,75,.28)", color: "var(--am)" },
@@ -120,6 +171,36 @@ export default function LeftPanel({ state, dispatch, pdfFile, setPdfFile, addToa
       <div style={{ flex: 1, overflowY: "auto", padding: 12 }}>
 
         {/* ─── アップロード ─── */}
+        <div style={{ fontFamily: "var(--ff)", fontSize: 9, fontWeight: 700, letterSpacing: "1.8px", textTransform: "uppercase", color: "var(--tm)", marginBottom: 8 }}>プロジェクト</div>
+        <div style={{ padding: "8px 9px", borderRadius: "var(--r)", background: "var(--s2)", border: "1px solid var(--bd)", marginBottom: 10 }}>
+          <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+            <button onClick={handleSaveProject} style={{ flex: 1, padding: "5px 8px", border: "1px solid var(--bd2)", borderRadius: 6, background: "var(--sur)", color: "var(--tp)", fontSize: 10 }}>
+              保存
+            </button>
+            <button onClick={handleReset} style={{ flex: 1, padding: "5px 8px", border: "1px solid var(--bd2)", borderRadius: 6, background: "var(--sur)", color: "var(--tp)", fontSize: 10 }}>
+              新規作成
+            </button>
+          </div>
+          <div style={{ fontSize: 10, color: "var(--ts)", marginBottom: 6 }}>
+            現在: {state.projectMeta?.name ?? "未保存"}
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 5, maxHeight: 124, overflowY: "auto" }}>
+            {projects.length === 0 ? (
+              <div style={{ fontSize: 10, color: "var(--tm)" }}>保存済みプロジェクトはまだありません</div>
+            ) : (
+              projects.map((project) => (
+                <div key={project.id} style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 6px", borderRadius: 6, background: "var(--sur)", border: "1px solid var(--bd)" }}>
+                  <button onClick={() => handleLoadProject(project.id)} style={{ flex: 1, textAlign: "left", border: "none", background: "none", color: "var(--tp)", fontSize: 10 }}>
+                    <div>{project.name}</div>
+                    <div style={{ color: "var(--tm)", fontSize: 9 }}>{new Date(project.updated_at).toLocaleString("ja-JP", { hour12: false })}</div>
+                  </button>
+                  <button onClick={() => handleDeleteProject(project.id)} style={{ border: "none", background: "none", color: "var(--rd)", fontSize: 10 }}>削除</button>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
         <div style={{ fontFamily: "var(--ff)", fontSize: 9, fontWeight: 700, letterSpacing: "1.8px", textTransform: "uppercase", color: "var(--tm)", marginBottom: 8 }}>入力スライド</div>
         <div
           onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
