@@ -185,10 +185,31 @@ export default function LeftPanel({ state, dispatch, pdfFile, setPdfFile, addToa
         {/* ─── アップロード ─── */}
         <div style={{ fontFamily: "var(--ff)", fontSize: 9, fontWeight: 700, letterSpacing: "1.8px", textTransform: "uppercase", color: "var(--tm)", marginBottom: 8 }}>プロジェクト</div>
         <div style={{ padding: "8px 9px", borderRadius: "var(--r)", background: "var(--s2)", border: "1px solid var(--bd)", marginBottom: 10 }}>
-          <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
-            <button onClick={handleSaveProject} style={{ flex: 1, padding: "7px 8px", border: "1px solid var(--bd2)", borderRadius: 6, background: "var(--sur)", color: "var(--tp)", fontSize: 10 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 8 }}>
+            <button
+              onClick={handleSaveProject}
+              style={{
+                minWidth: 96,
+                padding: "9px 16px",
+                border: "1px solid rgba(130,178,255,.42)",
+                borderRadius: 9,
+                background: isDirty
+                  ? "linear-gradient(180deg, rgba(122,165,242,.98), rgba(91,141,239,.88))"
+                  : "linear-gradient(180deg, rgba(58,79,122,.98), rgba(47,67,104,.92))",
+                color: "#fff",
+                fontSize: 11,
+                fontWeight: 700,
+                boxShadow: isDirty
+                  ? "inset 0 1px 0 rgba(255,255,255,.18), 0 10px 22px rgba(91,141,239,.22), 0 1px 0 rgba(7,8,11,.38)"
+                  : "inset 0 1px 0 rgba(255,255,255,.12), 0 6px 14px rgba(39,57,92,.18), 0 1px 0 rgba(7,8,11,.32)",
+                letterSpacing: ".04em",
+              }}
+            >
               保存
             </button>
+            <div style={{ fontSize: 9, color: isDirty ? "var(--am)" : "var(--gr)", background: isDirty ? "var(--amd)" : "var(--gd)", border: `1px solid ${isDirty ? "rgba(232,169,75,.28)" : "rgba(76,175,130,.28)"}`, borderRadius: 999, padding: "2px 8px", whiteSpace: "nowrap" }}>
+              {isDirty ? "未保存" : "保存済み"}
+            </div>
           </div>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
             <div>
@@ -199,9 +220,7 @@ export default function LeftPanel({ state, dispatch, pdfFile, setPdfFile, addToa
                 {isDirty ? "未保存の変更があります" : "保存済みの状態です"}
               </div>
             </div>
-            <div style={{ fontSize: 9, color: isDirty ? "var(--am)" : "var(--gr)", background: isDirty ? "var(--amd)" : "var(--gd)", border: `1px solid ${isDirty ? "rgba(232,169,75,.28)" : "rgba(76,175,130,.28)"}`, borderRadius: 999, padding: "2px 8px", whiteSpace: "nowrap" }}>
-              {isDirty ? "未保存" : "保存済み"}
-            </div>
+            <div style={{ width: 10, height: 10, borderRadius: 999, background: isDirty ? "var(--am)" : "var(--gr)", boxShadow: isDirty ? "0 0 0 4px rgba(232,169,75,.12)" : "0 0 0 4px rgba(76,175,130,.12)" }} />
           </div>
         </div>
 
