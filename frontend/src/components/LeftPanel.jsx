@@ -229,7 +229,22 @@ export default function LeftPanel({ state, dispatch, pdfFile, setPdfFile, addToa
           onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
           onDragLeave={() => setDrag(false)}
           onDrop={(e) => { e.preventDefault(); setDrag(false); handleFile(e.dataTransfer.files[0]); }}
-          style={{ border: `2px dashed ${drag ? "var(--ac)" : "var(--bd2)"}`, borderRadius: "var(--rl)", padding: "14px 10px", textAlign: "center", cursor: "pointer", transition: "var(--tr)", position: "relative", marginBottom: 8, background: drag ? "var(--adim)" : "none" }}
+          style={{
+            border: `2px dashed ${pdfFile ? "rgba(76,175,130,.58)" : drag ? "var(--ac)" : "var(--bd2)"}`,
+            borderRadius: "var(--rl)",
+            padding: "14px 10px",
+            textAlign: "center",
+            cursor: "pointer",
+            transition: "var(--tr)",
+            position: "relative",
+            marginBottom: 8,
+            background: pdfFile
+              ? "linear-gradient(180deg, rgba(76,175,130,.14), rgba(76,175,130,.05))"
+              : drag
+                ? "var(--adim)"
+                : "none",
+            boxShadow: pdfFile ? "inset 0 0 0 1px rgba(76,175,130,.18), 0 10px 24px rgba(76,175,130,.08)" : "none",
+          }}
         >
           {/* key={pdfFile} でリセット後に input を再マウント → ファイル選択が再度できるようになる */}
           <input
@@ -239,18 +254,32 @@ export default function LeftPanel({ state, dispatch, pdfFile, setPdfFile, addToa
             onChange={(e) => handleFile(e.target.files[0])}
             style={{ position: "absolute", inset: 0, opacity: 0, cursor: "pointer" }}
           />
-          <div style={{ fontSize: 20, marginBottom: 4 }}>📑</div>
+          {pdfFile && (
+            <div style={{ position: "absolute", top: 8, right: 8, padding: "2px 8px", borderRadius: 999, background: "var(--gd)", border: "1px solid rgba(76,175,130,.32)", color: "var(--gr)", fontSize: 9, fontWeight: 700 }}>
+              選択済み
+            </div>
+          )}
+          <div style={{ fontSize: 20, marginBottom: 4 }}>{pdfFile ? "✅" : "📑"}</div>
           <p style={{ fontSize: 11, color: "var(--ts)", lineHeight: 1.45 }}>
-            <strong style={{ color: "var(--ac)" }}>クリック or ドロップ</strong><br />PDFを選択
+            <strong style={{ color: pdfFile ? "var(--gr)" : "var(--ac)" }}>
+              {pdfFile ? "別の PDF に差し替える" : "クリック or ドロップ"}
+            </strong>
+            <br />
+            {pdfFile ? "選択した PDF を確認できます" : "PDFを選択"}
           </p>
-          <small style={{ fontSize: 9, color: "var(--tm)" }}>PDF / max 50MB</small>
+          <small style={{ fontSize: 9, color: pdfFile ? "rgba(228,230,239,.78)" : "var(--tm)" }}>
+            {pdfFile ? "この PDF を使って講義メディアを生成します" : "PDF / max 50MB"}
+          </small>
         </div>
 
         {pdfFile && (
-          <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 8px", background: "var(--gd)", border: "1px solid var(--gr)", borderRadius: "var(--r)", marginBottom: 8 }}>
-            <span>✅</span>
-            <span style={{ fontFamily: "var(--fm)", fontSize: 10, color: "var(--gr)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pdfFile.name}</span>
-            <button onClick={() => setPdfFile(null)} style={{ padding: "1px 5px", border: "1px solid var(--bd2)", borderRadius: "var(--r)", background: "var(--s2)", color: "var(--tp)", fontSize: 10 }}>×</button>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 9px", background: "linear-gradient(180deg, rgba(76,175,130,.18), rgba(76,175,130,.1))", border: "1px solid rgba(76,175,130,.42)", borderRadius: "var(--r)", marginBottom: 8, boxShadow: "0 8px 18px rgba(76,175,130,.08)" }}>
+            <span style={{ fontSize: 13 }}>✅</span>
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div style={{ fontSize: 9, color: "rgba(228,230,239,.72)", marginBottom: 2 }}>現在選択中の PDF</div>
+              <div style={{ fontFamily: "var(--fm)", fontSize: 10, color: "var(--tp)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pdfFile.name}</div>
+            </div>
+            <button onClick={() => setPdfFile(null)} style={{ padding: "3px 7px", border: "1px solid var(--bd2)", borderRadius: "var(--r)", background: "rgba(19,21,26,.68)", color: "var(--tp)", fontSize: 10 }}>変更</button>
           </div>
         )}
 

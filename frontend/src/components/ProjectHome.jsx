@@ -248,44 +248,54 @@ export default function ProjectHome({
                       handlePendingPdf(e.dataTransfer.files?.[0] ?? null);
                     }}
                     onClick={() => fileInputRef.current?.click()}
-                    style={{
-                      position: "relative",
-                      padding: "18px 18px 16px",
-                      border: `1px dashed ${draggingPdf ? "rgba(110,193,255,.52)" : "rgba(110,193,255,.26)"}`,
-                      background: draggingPdf
+                  style={{
+                    position: "relative",
+                    padding: "18px 18px 16px",
+                    border: `1px dashed ${pendingPdf ? "rgba(76,175,130,.58)" : draggingPdf ? "rgba(110,193,255,.52)" : "rgba(110,193,255,.26)"}`,
+                    background: pendingPdf
+                      ? "linear-gradient(135deg, rgba(76,175,130,.16), rgba(255,255,255,.05) 55%, transparent)"
+                      : draggingPdf
                         ? "linear-gradient(135deg, rgba(91,141,239,.14), rgba(255,255,255,.04))"
                         : "linear-gradient(135deg, rgba(255,255,255,.03), rgba(255,255,255,.015) 60%, transparent)",
-                      cursor: "pointer",
-                      overflow: "hidden",
-                      borderRadius: bevelPanelRadius,
-                    }}
-                  >
-                    <div style={{ position: "absolute", left: 0, top: 0, width: 110, height: 4, background: "var(--ac)" }} />
-                    <input
-                      ref={fileInputRef}
-                      type="file"
+                    cursor: "pointer",
+                    overflow: "hidden",
+                    borderRadius: bevelPanelRadius,
+                    boxShadow: pendingPdf ? "inset 0 0 0 1px rgba(76,175,130,.18), 0 14px 28px rgba(76,175,130,.08)" : "none",
+                  }}
+                >
+                  <div style={{ position: "absolute", left: 0, top: 0, width: 110, height: 4, background: pendingPdf ? "var(--gr)" : "var(--ac)" }} />
+                  {pendingPdf && (
+                    <div style={{ position: "absolute", right: 14, top: 12, padding: "3px 9px", borderRadius: 999, background: "var(--gd)", border: "1px solid rgba(76,175,130,.34)", color: "var(--gr)", fontSize: 10, fontWeight: 700 }}>
+                      PDF 選択済み
+                    </div>
+                  )}
+                  <input
+                    ref={fileInputRef}
+                    type="file"
                       accept=".pdf,application/pdf"
                       onChange={(e) => handlePendingPdf(e.target.files?.[0] ?? null)}
                       style={{ display: "none" }}
-                    />
-                    <div style={{ fontSize: 10, letterSpacing: "1.4px", textTransform: "uppercase", color: "var(--tm)", marginBottom: 8 }}>
-                      講義スライドから開始
+                  />
+                  <div style={{ fontSize: 10, letterSpacing: "1.4px", textTransform: "uppercase", color: "var(--tm)", marginBottom: 8 }}>
+                    講義スライドから開始
+                  </div>
+                  <div style={{ fontFamily: "var(--ff)", fontSize: 20, lineHeight: 1.15, marginBottom: 8 }}>
+                    {pendingPdf ? "選択した PDF で新規作成" : "PDF を選んで新規作成"}
+                  </div>
+                  <div style={{ fontSize: 11, color: "var(--ts)", lineHeight: 1.7, marginBottom: 12 }}>
+                    {pendingPdf
+                      ? "この PDF を使って新しいプロジェクトを開始できます。必要ならクリックして別の PDF に差し替えられます。"
+                      : "クリックまたはドロップで講義スライド PDF を選択し、そのまま編集画面へ進めます。"}
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                    <div style={{ padding: "4px 8px", background: pendingPdf ? "rgba(76,175,130,.12)" : "rgba(255,255,255,.04)", borderLeft: `2px solid ${pendingPdf ? "rgba(76,175,130,.42)" : "rgba(110,193,255,.3)"}`, fontSize: 10, color: pendingPdf ? "var(--gr)" : "var(--tm)" }}>
+                      {pendingPdf ? "準備完了" : "PDF / max 50MB"}
                     </div>
-                    <div style={{ fontFamily: "var(--ff)", fontSize: 20, lineHeight: 1.15, marginBottom: 8 }}>
-                      PDF を選んで新規作成
-                    </div>
-                    <div style={{ fontSize: 11, color: "var(--ts)", lineHeight: 1.7, marginBottom: 12 }}>
-                      クリックまたはドロップで講義スライド PDF を選択し、そのまま編集画面へ進めます。
-                    </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                      <div style={{ padding: "4px 8px", background: "rgba(255,255,255,.04)", borderLeft: "2px solid rgba(110,193,255,.3)", fontSize: 10, color: "var(--tm)" }}>
-                        PDF / max 50MB
-                      </div>
-                      <div style={{ fontSize: 11, color: pendingPdf ? "var(--tp)" : "var(--tm)", fontFamily: pendingPdf ? "var(--fm)" : "inherit" }}>
-                        {pendingPdf ? pendingPdf.name : "まだ PDF は選択されていません"}
-                      </div>
+                    <div style={{ fontSize: 11, color: pendingPdf ? "var(--tp)" : "var(--tm)", fontFamily: pendingPdf ? "var(--fm)" : "inherit", fontWeight: pendingPdf ? 600 : 400 }}>
+                      {pendingPdf ? pendingPdf.name : "まだ PDF は選択されていません"}
                     </div>
                   </div>
+                </div>
 
                 </div>
 
