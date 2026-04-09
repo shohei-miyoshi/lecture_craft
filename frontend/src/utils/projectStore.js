@@ -1,9 +1,8 @@
-import { API_URL } from "./constants.js";
-import { clearGuestSession, ensureGuestSession } from "./sessionStore.js";
+import { authFetch, getStoredSession } from "./sessionStore.js";
 
 const LEGACY_STORAGE_KEY = "kenkyu_local_projects_v1";
-const INDEX_STORAGE_KEY = "kenkyu_local_project_index_v2";
-const MIGRATION_FLAG_KEY = "kenkyu_local_project_index_v2_migrated";
+const INDEX_STORAGE_KEY_BASE = "kenkyu_local_project_index_v2";
+const MIGRATION_FLAG_KEY_BASE = "kenkyu_local_project_index_v2_migrated";
 const DB_NAME = "kenkyu-project-store";
 const DB_VERSION = 1;
 const STORE_NAME = "projects";
@@ -11,16 +10,28 @@ const STORE_NAME = "projects";
 let dbPromise = null;
 let migrationPromise = null;
 
+function currentStorageScope() {
+  return getStoredSession()?.user?.id ?? "anonymous";
+}
+
+function scopedIndexKey() {
+  return `${INDEX_STORAGE_KEY_BASE}_${currentStorageScope()}`;
+}
+
+function scopedMigrationFlagKey() {
+  return `${MIGRATION_FLAG_KEY_BASE}_${currentStorageScope()}`;
+}
+
 function loadIndex() {
   try {
-    return JSON.parse(localStorage.getItem(INDEX_STORAGE_KEY) ?? "[]");
+    return JSON.parse(localStorage.getItem(scopedIndexKey()) ?? "[]");
   } catch {
     return [];
   }
 }
 
 function saveIndex(rows) {
-  localStorage.setItem(INDEX_STORAGE_KEY, JSON.stringify(rows));
+  localStorage.setItem(scopedIndexKey(), JSON.stringify(rows));
 }
 
 function loadLegacyRows() {
@@ -177,12 +188,13 @@ async function deleteProjectRecord(projectId) {
 async function migrateLegacyStorage() {
   if (migrationPromise) return migrationPromise;
   migrationPromise = (async () => {
-    if (localStorage.getItem(MIGRATION_FLAG_KEY) === "done") return;
+    const migrationFlagKey = scopedMigrationFlagKey();
+    if (localStorage.getItem(migrationFlagKey) === "done") return;
 
     const legacyRows = loadLegacyRows();
     if (!legacyRows.length) {
-      if (!localStorage.getItem(INDEX_STORAGE_KEY)) saveIndex([]);
-      localStorage.setItem(MIGRATION_FLAG_KEY, "done");
+      if (!localStorage.getItem(scopedIndexKey())) saveIndex([]);
+      localStorage.setItem(migrationFlagKey, "done");
       return;
     }
 
@@ -194,24 +206,20 @@ async function migrateLegacyStorage() {
 
     saveIndex(sortIndex(indexRows));
     localStorage.removeItem(LEGACY_STORAGE_KEY);
-    localStorage.setItem(MIGRATION_FLAG_KEY, "done");
+    localStorage.setItem(migrationFlagKey, "done");
   })();
   return migrationPromise;
 }
 
 async function apiRequest(path, options = {}, retry = true) {
-  const session = await ensureGuestSession();
+  if (!getStoredSession()?.session_token) {
+    throw new Error("ログインが必要です");
+  }
   const headers = {
     "Content-Type": "application/json",
-    "X-Kenkyu-Session": session.session_token,
     ...(options.headers ?? {}),
   };
-  const res = await fetch(`${API_URL}${path}`, { ...options, headers });
-  if ((res.status === 401 || res.status === 403) && retry) {
-    clearGuestSession();
-    await ensureGuestSession();
-    return apiRequest(path, options, false);
-  }
+  const res = await authFetch(path, { ...options, headers }, retry);
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(text || `HTTP ${res.status}`);

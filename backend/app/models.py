@@ -11,6 +11,11 @@ class GuestSessionResponse(BaseModel):
     user: Dict[str, Any] = Field(default_factory=dict)
 
 
+class AuthCredentialsRequest(BaseModel):
+    username: str
+    password: str
+
+
 class GenerateRequest(BaseModel):
     pdf_base64: str
     filename: str

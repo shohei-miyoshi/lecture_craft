@@ -117,6 +117,7 @@ curl http://127.0.0.1:8000/api/health
 ローカル開発では `backend/data/kenkyu_app.db` の SQLite を使い、
 実運用では `DATABASE_URL` で PostgreSQL に切り替える想定です。
 DB 自体は外部ストレージですが、接続設定・テーブル定義・保存 API は `backend/app/` のコードにあります。
+最初に作成されたアカウントは管理者になり、管理系 API は管理者のみ利用できます。
 
 補足:
 - `backend/.venv` は `Python 3.10` または `3.11` で作ってください

@@ -13,6 +13,7 @@ from .admin import build_admin_overview
 from .db import init_db
 from .jobs import get_job_manager
 from .models import (
+    AuthCredentialsRequest,
     ExperimentJoinRequest,
     ExportRequest,
     GenerateRequest,
@@ -32,7 +33,10 @@ from .persistence import (
     get_review_settings,
     get_session_context,
     join_experiment,
+    login_user,
     list_projects_for_user,
+    logout_session,
+    register_user,
     save_layout_review_records,
     save_project_events,
     save_project_for_user,
@@ -101,6 +105,33 @@ def startup_event() -> None:
 
 def _require_session(x_kenkyu_session: str | None) -> dict:
     return get_session_context(x_kenkyu_session or "")
+
+
+def _require_admin(x_kenkyu_session: str | None) -> dict:
+    session = _require_session(x_kenkyu_session)
+    if session["user"].get("role") != "admin":
+        raise ApiError(403, "ADMIN_REQUIRED", "この操作は管理者のみ実行できます。")
+    return session
+
+
+@app.post("/api/auth/register")
+def auth_register_endpoint(req: AuthCredentialsRequest):
+    return register_user(req.username, req.password)
+
+
+@app.post("/api/auth/login")
+def auth_login_endpoint(req: AuthCredentialsRequest):
+    return login_user(req.username, req.password)
+
+
+@app.post("/api/auth/logout")
+def auth_logout_endpoint(x_kenkyu_session: str | None = Header(default=None)):
+    return logout_session(x_kenkyu_session or "")
+
+
+@app.get("/api/auth/me")
+def auth_me_endpoint(x_kenkyu_session: str | None = Header(default=None)):
+    return _require_session(x_kenkyu_session)
 
 
 @app.post("/api/auth/guest")
@@ -172,12 +203,14 @@ def project_events_endpoint(project_id: str, req: ProjectEventsRequest, x_kenkyu
 
 
 @app.get("/api/admin/review-settings")
-def review_settings_get_endpoint():
+def review_settings_get_endpoint(x_kenkyu_session: str | None = Header(default=None)):
+    _require_admin(x_kenkyu_session)
     return get_review_settings()
 
 
 @app.patch("/api/admin/review-settings")
-def review_settings_patch_endpoint(req: ReviewSettingsPatchRequest):
+def review_settings_patch_endpoint(req: ReviewSettingsPatchRequest, x_kenkyu_session: str | None = Header(default=None)):
+    _require_admin(x_kenkyu_session)
     return upsert_review_settings(
         scope_type=req.scope_type,
         scope_key=req.scope_key,
@@ -228,7 +261,8 @@ def job_cancel_endpoint(job_id: str):
 
 
 @app.get("/api/admin/overview")
-def admin_overview_endpoint(limit: int = 12):
+def admin_overview_endpoint(limit: int = 12, x_kenkyu_session: str | None = Header(default=None)):
+    _require_admin(x_kenkyu_session)
     return build_admin_overview(limit=max(1, min(limit, 50)))
 
 

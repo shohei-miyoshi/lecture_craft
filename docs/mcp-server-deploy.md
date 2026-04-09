@@ -69,6 +69,9 @@ export OPENAI_API_KEY=...
 - DB そのものは backend の外にあるサービスです
 - ただし接続設定、テーブル定義、保存 API は `backend/app/` のコードで管理します
 - ローカルでは SQLite、実運用では PostgreSQL を想定しています
+- つまり「コードを書くだけ」で本番 DB が自動で作られるわけではなく、
+  PostgreSQL サーバやマネージド DB を先に用意して、その接続情報を backend に渡します
+- backend はその接続先に対して必要なテーブルを初期化して使います
 
 ## 更新運用
 

@@ -14,7 +14,9 @@ import RightPanel    from "./components/RightPanel.jsx";
 import ExportPanel   from "./components/ExportPanel.jsx";
 import AdminDashboard from "./components/AdminDashboard.jsx";
 import ProjectHome from "./components/ProjectHome.jsx";
+import AuthScreen from "./components/AuthScreen.jsx";
 import { buildProjectPayload, fingerprintProjectState, saveProject } from "./utils/projectStore.js";
+import { fetchCurrentSession, logoutUser } from "./utils/sessionStore.js";
 
 function parseRouteFromHash(hashValue) {
   if (hashValue === "#admin") {
@@ -54,6 +56,8 @@ export default function App() {
   const [tab, setTab]             = useState("editor");
   const [view, setView]           = useState(initialRoute.view);
   const [studioScreen, setStudioScreen] = useState(initialRoute.studioScreen);
+  const [authReady, setAuthReady] = useState(false);
+  const [authSession, setAuthSession] = useState(null);
   const { toasts, addToast }      = useToast();
   const { confirmProps, requestConfirm, requestPrompt } = useConfirm();
   const { layout, startResizeLeft, startResizeRight, resizingLeft, resizingRight, resetLayout } = useResizableLayout();
@@ -73,6 +77,25 @@ export default function App() {
           },
         }
       : null;
+  const isAdmin = authSession?.user?.role === "admin";
+
+  useEffect(() => {
+    let active = true;
+    fetchCurrentSession()
+      .then((session) => {
+        if (!active) return;
+        setAuthSession(session);
+        setAuthReady(true);
+      })
+      .catch(() => {
+        if (!active) return;
+        setAuthSession(null);
+        setAuthReady(true);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const setStudioRoute = (nextScreen, historyMode = "push") => {
     const nextHash = nextScreen === "editor" ? "#editor" : "";
@@ -218,6 +241,12 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (!isAdmin && view === "admin") {
+      setStudioRoute("home", "replace");
+    }
+  }, [isAdmin, view]);
+
+  useEffect(() => {
     const handler = (e) => {
       if (view === "admin" || studioScreen === "home") return;
       if (["INPUT", "TEXTAREA"].includes(e.target.tagName) || e.target.contentEditable === "true") return;
@@ -309,11 +338,51 @@ export default function App() {
 
   const switchView = (nextView) => {
     if (nextView === "admin") {
+      if (!isAdmin) return;
       setAdminRoute();
       return;
     }
     setStudioRoute(studioScreen === "editor" ? "editor" : "home");
   };
+
+  const handleLogout = () => {
+    const run = async () => {
+      await logoutUser();
+      setAuthSession(null);
+      setView("studio");
+      setStudioScreen("home");
+      dispatch({ type: "RESET" });
+      setPdfFile(null);
+      addToast("ok", "ログアウトしました");
+    };
+    if (!isDirty) {
+      run();
+      return;
+    }
+    requestConfirm({
+      title: "ログアウト",
+      message: "未保存の変更があります。保存せずにログアウトしますか？",
+      confirmLabel: "ログアウトする",
+      onConfirm: run,
+    });
+  };
+
+  if (!authReady) {
+    return (
+      <div style={{ minHeight: "100vh", display: "grid", placeItems: "center", background: "var(--bg)", color: "var(--ts)" }}>
+        認証状態を確認中...
+      </div>
+    );
+  }
+
+  if (!authSession) {
+    return (
+      <>
+        <AuthScreen onAuthenticated={setAuthSession} addToast={addToast} />
+        <ToastLayer toasts={toasts} />
+      </>
+    );
+  }
 
   return (
     <div
@@ -378,7 +447,7 @@ export default function App() {
         <div style={{ display: "inline-flex", padding: 3, borderRadius: 999, background: "var(--s2)", border: "1px solid var(--bd)" }}>
           {[
             ["studio", "編集"],
-            ["admin", "管理"],
+            ...(isAdmin ? [["admin", "管理"]] : []),
           ].map(([key, label]) => (
             <button
               key={key}
@@ -398,6 +467,17 @@ export default function App() {
           ))}
         </div>
         <div style={{ flex: 1 }} />
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ fontSize: 10, color: "var(--tm)" }}>
+            {authSession.user?.username}
+          </div>
+          <div style={{ padding: "3px 8px", borderRadius: 999, background: isAdmin ? "rgba(91,141,239,.16)" : "rgba(255,255,255,.05)", border: "1px solid var(--bd2)", fontSize: 9, color: isAdmin ? "var(--ac)" : "var(--ts)" }}>
+            {isAdmin ? "管理者" : "ユーザ"}
+          </div>
+          <button onClick={handleLogout} style={{ padding: "5px 9px", border: "1px solid var(--bd2)", background: "var(--s2)", color: "var(--tp)", fontSize: 10 }}>
+            ログアウト
+          </button>
+        </div>
         {/* レイアウトリセット */}
         {view === "studio" && studioScreen === "editor" && (
           <>

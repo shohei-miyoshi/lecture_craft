@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
 import json
+import re
 import secrets
 import uuid
 from datetime import datetime
@@ -8,6 +12,11 @@ from typing import Any, Dict, Iterable, List, Optional
 
 from .db import db_conn, json_text
 from .service import ApiError
+
+
+USERNAME_PATTERN = re.compile(r"^[A-Za-z0-9_.-]{3,40}$")
+PASSWORD_MIN_LENGTH = 8
+PBKDF2_ITERATIONS = 390_000
 
 
 def _now_iso() -> str:
@@ -21,6 +30,281 @@ def _loads(value: Any, fallback: Any) -> Any:
         return json.loads(value)
     except Exception:
         return fallback
+
+
+def _normalize_username(username: str) -> str:
+    cleaned = str(username or "").strip().lower()
+    if not USERNAME_PATTERN.fullmatch(cleaned):
+        raise ApiError(
+            400,
+            "INVALID_USERNAME",
+            "ユーザ名は 3〜40 文字の英数字・._- を使ってください。",
+        )
+    return cleaned
+
+
+def _validate_password(password: str) -> str:
+    value = str(password or "")
+    if len(value) < PASSWORD_MIN_LENGTH:
+        raise ApiError(400, "INVALID_PASSWORD", "パスワードは 8 文字以上にしてください。")
+    return value
+
+
+def _hash_password(password: str) -> str:
+    salt = secrets.token_bytes(16)
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, PBKDF2_ITERATIONS)
+    salt_b64 = base64.b64encode(salt).decode("ascii")
+    digest_b64 = base64.b64encode(digest).decode("ascii")
+    return f"pbkdf2_sha256${PBKDF2_ITERATIONS}${salt_b64}${digest_b64}"
+
+
+def _verify_password(password: str, stored_hash: str) -> bool:
+    try:
+        algorithm, iterations_raw, salt_b64, digest_b64 = stored_hash.split("$", 3)
+        if algorithm != "pbkdf2_sha256":
+            return False
+        iterations = int(iterations_raw)
+        salt = base64.b64decode(salt_b64.encode("ascii"))
+        expected = base64.b64decode(digest_b64.encode("ascii"))
+    except Exception:
+        return False
+    actual = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, iterations)
+    return hmac.compare_digest(actual, expected)
+
+
+def _is_unique_error(exc: Exception) -> bool:
+    message = str(exc)
+    return "UNIQUE constraint failed" in message or "duplicate key value violates unique constraint" in message
+
+
+def _create_session_record(
+    *,
+    conn: Any,
+    user_id: str,
+    experiment_id: Optional[str] = None,
+    participant_label: Optional[str] = None,
+) -> Dict[str, Any]:
+    now = _now_iso()
+    session_id = f"sess_{uuid.uuid4().hex[:12]}"
+    session_token = secrets.token_urlsafe(32)
+    conn.execute(
+        """
+        INSERT INTO user_sessions (
+            id, user_id, session_token, experiment_id, participant_label,
+            created_at, updated_at, last_seen_at
+        )
+        VALUES (:id, :user_id, :session_token, :experiment_id, :participant_label, :created_at, :updated_at, :last_seen_at)
+        """,
+        {
+            "id": session_id,
+            "user_id": user_id,
+            "session_token": session_token,
+            "experiment_id": experiment_id,
+            "participant_label": participant_label,
+            "created_at": now,
+            "updated_at": now,
+            "last_seen_at": now,
+        },
+    )
+    return {
+        "session_id": session_id,
+        "session_token": session_token,
+    }
+
+
+def _build_auth_payload(user_row: Any, session_row: Dict[str, Any], experiment_id: Optional[str] = None) -> Dict[str, Any]:
+    return {
+        **session_row,
+        "experiment_id": experiment_id,
+        "user": {
+            "id": user_row["id"],
+            "username": user_row.get("username") if isinstance(user_row, dict) else user_row["username"],
+            "kind": user_row.get("user_kind") if isinstance(user_row, dict) else user_row["user_kind"],
+            "role": user_row.get("role") if isinstance(user_row, dict) else user_row["role"],
+            "email": user_row.get("email") if isinstance(user_row, dict) else user_row["email"],
+        },
+    }
+
+
+def _count_admins(conn: Any) -> int:
+    row = conn.execute(
+        "SELECT COUNT(*) AS total FROM users WHERE role = :role",
+        {"role": "admin"},
+    ).fetchone()
+    return int((row["total"] if row else 0) or 0)
+
+
+def register_user(username: str, password: str) -> Dict[str, Any]:
+    now = _now_iso()
+    clean_username = _normalize_username(username)
+    password_value = _validate_password(password)
+    password_hash = _hash_password(password_value)
+    user_id = f"user_{uuid.uuid4().hex[:12]}"
+    role = "user"
+    with db_conn() as conn:
+        if _count_admins(conn) == 0:
+            role = "admin"
+        try:
+            conn.execute(
+                """
+                INSERT INTO users (
+                    id, user_kind, username, password_hash, role, email, is_active, created_at, updated_at
+                )
+                VALUES (:id, :user_kind, :username, :password_hash, :role, :email, :is_active, :created_at, :updated_at)
+                """,
+                {
+                    "id": user_id,
+                    "user_kind": "registered",
+                    "username": clean_username,
+                    "password_hash": password_hash,
+                    "role": role,
+                    "email": None,
+                    "is_active": 1,
+                    "created_at": now,
+                    "updated_at": now,
+                },
+            )
+        except Exception as exc:
+            if _is_unique_error(exc):
+                raise ApiError(409, "USERNAME_EXISTS", "そのユーザ名はすでに使われています。") from exc
+            raise
+        session_row = _create_session_record(conn=conn, user_id=user_id)
+        user_row = conn.execute(
+            """
+            SELECT id, user_kind, username, role, email
+            FROM users
+            WHERE id = :user_id
+            """,
+            {"user_id": user_id},
+        ).fetchone()
+    return _build_auth_payload(user_row, session_row)
+
+
+def login_user(username: str, password: str) -> Dict[str, Any]:
+    clean_username = _normalize_username(username)
+    password_value = _validate_password(password)
+    with db_conn() as conn:
+        user_row = conn.execute(
+            """
+            SELECT id, user_kind, username, role, email, password_hash, is_active
+            FROM users
+            WHERE username = :username
+            """,
+            {"username": clean_username},
+        ).fetchone()
+        if user_row is None or not user_row["password_hash"]:
+            raise ApiError(401, "INVALID_LOGIN", "ユーザ名またはパスワードが違います。")
+        if int(user_row["is_active"] or 0) != 1:
+            raise ApiError(403, "USER_DISABLED", "このアカウントは現在利用できません。")
+        if not _verify_password(password_value, user_row["password_hash"]):
+            raise ApiError(401, "INVALID_LOGIN", "ユーザ名またはパスワードが違います。")
+        session_row = _create_session_record(conn=conn, user_id=user_row["id"])
+    return _build_auth_payload(user_row, session_row)
+
+
+def logout_session(session_token: str) -> Dict[str, Any]:
+    token = str(session_token or "").strip()
+    if not token:
+        return {"ok": True}
+    with db_conn() as conn:
+        conn.execute(
+            "DELETE FROM user_sessions WHERE session_token = :session_token",
+            {"session_token": token},
+        )
+    return {"ok": True}
+
+
+def create_guest_session() -> Dict[str, Any]:
+    now = _now_iso()
+    user_id = f"user_{uuid.uuid4().hex[:12]}"
+    with db_conn() as conn:
+        conn.execute(
+            """
+            INSERT INTO users (id, user_kind, role, email, is_active, created_at, updated_at)
+            VALUES (:id, :user_kind, :role, :email, :is_active, :created_at, :updated_at)
+            """,
+            {
+                "id": user_id,
+                "user_kind": "guest",
+                "role": "user",
+                "email": None,
+                "is_active": 1,
+                "created_at": now,
+                "updated_at": now,
+            },
+        )
+        session_row = _create_session_record(conn=conn, user_id=user_id)
+        user_row = conn.execute(
+            "SELECT id, user_kind, username, role, email FROM users WHERE id = :user_id",
+            {"user_id": user_id},
+        ).fetchone()
+    return _build_auth_payload(user_row, session_row)
+
+
+def get_session_context(session_token: str) -> Dict[str, Any]:
+    token = str(session_token or "").strip()
+    if not token:
+        raise ApiError(401, "AUTH_REQUIRED", "ログインが必要です。")
+    now = _now_iso()
+    with db_conn() as conn:
+        row = conn.execute(
+            """
+            SELECT
+                s.id AS session_id,
+                s.session_token,
+                s.experiment_id,
+                s.participant_label,
+                u.id AS user_id,
+                u.user_kind,
+                u.username,
+                u.role,
+                u.email,
+                u.is_active
+            FROM user_sessions AS s
+            JOIN users AS u ON u.id = s.user_id
+            WHERE s.session_token = :session_token
+            """,
+            {"session_token": token},
+        ).fetchone()
+        if row is None:
+            raise ApiError(401, "INVALID_SESSION", "セッションが無効です。再ログインしてください。")
+        if int(row["is_active"] or 0) != 1:
+            raise ApiError(403, "USER_DISABLED", "このアカウントは現在利用できません。")
+        conn.execute(
+            """
+            UPDATE user_sessions
+            SET updated_at = :updated_at, last_seen_at = :last_seen_at
+            WHERE id = :session_id
+            """,
+            {"updated_at": now, "last_seen_at": now, "session_id": row["session_id"]},
+        )
+    return {
+        "session_id": row["session_id"],
+        "session_token": row["session_token"],
+        "experiment_id": row["experiment_id"],
+        "participant_label": row["participant_label"],
+        "user": {
+            "id": row["user_id"],
+            "username": row["username"],
+            "kind": row["user_kind"],
+            "role": row["role"],
+            "email": row["email"],
+        },
+    }
+
+
+def list_projects_for_user(user_id: str) -> List[Dict[str, Any]]:
+    with db_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT id, name, created_at, updated_at, experiment_id, latest_state_json
+            FROM projects
+            WHERE user_id = :user_id
+            ORDER BY updated_at DESC
+            """,
+            {"user_id": user_id},
+        ).fetchall()
+    return [_project_summary_from_row(row) for row in rows]
 
 
 def _project_summary_from_row(row: Any) -> Dict[str, Any]:
@@ -50,100 +334,15 @@ def _project_payload_from_row(row: Any) -> Dict[str, Any]:
     }
 
 
-def create_guest_session() -> Dict[str, Any]:
-    now = _now_iso()
-    user_id = f"user_{uuid.uuid4().hex[:12]}"
-    session_id = f"sess_{uuid.uuid4().hex[:12]}"
-    session_token = secrets.token_urlsafe(32)
-    with db_conn() as conn:
-        conn.execute(
-            """
-            INSERT INTO users (id, user_kind, email, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?)
-            """,
-            (user_id, "guest", None, now, now),
-        )
-        conn.execute(
-            """
-            INSERT INTO user_sessions (
-                id, user_id, session_token, experiment_id, participant_label,
-                created_at, updated_at, last_seen_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (session_id, user_id, session_token, None, None, now, now, now),
-        )
-    return {
-        "session_token": session_token,
-        "session_id": session_id,
-        "user": {"id": user_id, "kind": "guest"},
-    }
-
-
-def get_session_context(session_token: str) -> Dict[str, Any]:
-    token = str(session_token or "").strip()
-    if not token:
-        raise ApiError(401, "AUTH_REQUIRED", "ゲストセッションが見つかりません。/api/auth/guest を先に実行してください。")
-    now = _now_iso()
-    with db_conn() as conn:
-        row = conn.execute(
-            """
-            SELECT
-                s.id AS session_id,
-                s.session_token,
-                s.experiment_id,
-                s.participant_label,
-                u.id AS user_id,
-                u.user_kind,
-                u.email
-            FROM user_sessions AS s
-            JOIN users AS u ON u.id = s.user_id
-            WHERE s.session_token = ?
-            """,
-            (token,),
-        ).fetchone()
-        if row is None:
-            raise ApiError(401, "INVALID_SESSION", "セッションが無効です。再読み込みしてやり直してください。")
-        conn.execute(
-            "UPDATE user_sessions SET updated_at = ?, last_seen_at = ? WHERE id = ?",
-            (now, now, row["session_id"]),
-        )
-    return {
-        "session_id": row["session_id"],
-        "session_token": row["session_token"],
-        "experiment_id": row["experiment_id"],
-        "participant_label": row["participant_label"],
-        "user": {
-            "id": row["user_id"],
-            "kind": row["user_kind"],
-            "email": row["email"],
-        },
-    }
-
-
-def list_projects_for_user(user_id: str) -> List[Dict[str, Any]]:
-    with db_conn() as conn:
-        rows = conn.execute(
-            """
-            SELECT id, name, created_at, updated_at, experiment_id, latest_state_json
-            FROM projects
-            WHERE user_id = ?
-            ORDER BY updated_at DESC
-            """,
-            (user_id,),
-        ).fetchall()
-    return [_project_summary_from_row(row) for row in rows]
-
-
 def get_project_for_user(project_id: str, user_id: str) -> Dict[str, Any]:
     with db_conn() as conn:
         row = conn.execute(
             """
             SELECT id, name, created_at, updated_at, experiment_id, latest_state_json
             FROM projects
-            WHERE id = ? AND user_id = ?
+            WHERE id = :project_id AND user_id = :user_id
             """,
-            (project_id, user_id),
+            {"project_id": project_id, "user_id": user_id},
         ).fetchone()
     if row is None:
         raise ApiError(404, "PROJECT_NOT_FOUND", f"project not found: {project_id}")
@@ -152,8 +351,8 @@ def get_project_for_user(project_id: str, user_id: str) -> Dict[str, Any]:
 
 def _next_project_version(conn: Any, project_id: str) -> int:
     row = conn.execute(
-        "SELECT COALESCE(MAX(version_number), 0) AS max_version FROM project_versions WHERE project_id = ?",
-        (project_id,),
+        "SELECT COALESCE(MAX(version_number), 0) AS max_version FROM project_versions WHERE project_id = :project_id",
+        {"project_id": project_id},
     ).fetchone()
     return int((row["max_version"] if row else 0) or 0) + 1
 
@@ -172,8 +371,8 @@ def save_project_for_user(
     generation_ref = data.get("generation_ref") if isinstance(data, dict) else {}
     with db_conn() as conn:
         existing = conn.execute(
-            "SELECT id, created_at FROM projects WHERE id = ? AND user_id = ?",
-            (project_id, user_id),
+            "SELECT id, created_at FROM projects WHERE id = :project_id AND user_id = :user_id",
+            {"project_id": project_id, "user_id": user_id},
         ).fetchone()
         payload_json = json_text(data)
         review_states_json = json_text(review_states if isinstance(review_states, dict) else {})
@@ -186,19 +385,22 @@ def save_project_for_user(
                     id, user_id, experiment_id, name, latest_state_json,
                     generation_refs_json, review_states_json, created_at, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (
+                    :id, :user_id, :experiment_id, :name, :latest_state_json,
+                    :generation_refs_json, :review_states_json, :created_at, :updated_at
+                )
                 """,
-                (
-                    project_id,
-                    user_id,
-                    experiment_id,
-                    clean_name,
-                    payload_json,
-                    generation_refs_json,
-                    review_states_json,
-                    created_at,
-                    now,
-                ),
+                {
+                    "id": project_id,
+                    "user_id": user_id,
+                    "experiment_id": experiment_id,
+                    "name": clean_name,
+                    "latest_state_json": payload_json,
+                    "generation_refs_json": generation_refs_json,
+                    "review_states_json": review_states_json,
+                    "created_at": created_at,
+                    "updated_at": now,
+                },
             )
         else:
             created_at = existing["created_at"]
@@ -206,24 +408,24 @@ def save_project_for_user(
                 """
                 UPDATE projects
                 SET
-                    experiment_id = ?,
-                    name = ?,
-                    latest_state_json = ?,
-                    generation_refs_json = ?,
-                    review_states_json = ?,
-                    updated_at = ?
-                WHERE id = ? AND user_id = ?
+                    experiment_id = :experiment_id,
+                    name = :name,
+                    latest_state_json = :latest_state_json,
+                    generation_refs_json = :generation_refs_json,
+                    review_states_json = :review_states_json,
+                    updated_at = :updated_at
+                WHERE id = :project_id AND user_id = :user_id
                 """,
-                (
-                    experiment_id,
-                    clean_name,
-                    payload_json,
-                    generation_refs_json,
-                    review_states_json,
-                    now,
-                    project_id,
-                    user_id,
-                ),
+                {
+                    "experiment_id": experiment_id,
+                    "name": clean_name,
+                    "latest_state_json": payload_json,
+                    "generation_refs_json": generation_refs_json,
+                    "review_states_json": review_states_json,
+                    "updated_at": now,
+                    "project_id": project_id,
+                    "user_id": user_id,
+                },
             )
         version_number = _next_project_version(conn, project_id)
         conn.execute(
@@ -231,24 +433,24 @@ def save_project_for_user(
             INSERT INTO project_versions (
                 id, project_id, version_number, saved_by_user_id, snapshot_json, created_at
             )
-            VALUES (?, ?, ?, ?, ?, ?)
+            VALUES (:id, :project_id, :version_number, :saved_by_user_id, :snapshot_json, :created_at)
             """,
-            (
-                f"ver_{uuid.uuid4().hex[:12]}",
-                project_id,
-                version_number,
-                user_id,
-                payload_json,
-                now,
-            ),
+            {
+                "id": f"ver_{uuid.uuid4().hex[:12]}",
+                "project_id": project_id,
+                "version_number": version_number,
+                "saved_by_user_id": user_id,
+                "snapshot_json": payload_json,
+                "created_at": now,
+            },
         )
         row = conn.execute(
             """
             SELECT id, name, created_at, updated_at, experiment_id, latest_state_json
             FROM projects
-            WHERE id = ? AND user_id = ?
+            WHERE id = :project_id AND user_id = :user_id
             """,
-            (project_id, user_id),
+            {"project_id": project_id, "user_id": user_id},
         ).fetchone()
     return {
         **_project_payload_from_row(row),
@@ -265,10 +467,10 @@ def save_project_for_user(
 def delete_project_for_user(project_id: str, user_id: str) -> None:
     with db_conn() as conn:
         deleted = conn.execute(
-            "DELETE FROM projects WHERE id = ? AND user_id = ?",
-            (project_id, user_id),
+            "DELETE FROM projects WHERE id = :project_id AND user_id = :user_id",
+            {"project_id": project_id, "user_id": user_id},
         )
-    if deleted.rowcount == 0:
+    if int(getattr(deleted, "rowcount", 0) or 0) == 0:
         raise ApiError(404, "PROJECT_NOT_FOUND", f"project not found: {project_id}")
 
 
@@ -282,8 +484,8 @@ def save_project_events(
     skipped = 0
     with db_conn() as conn:
         project = conn.execute(
-            "SELECT id FROM projects WHERE id = ? AND user_id = ?",
-            (project_id, user_id),
+            "SELECT id FROM projects WHERE id = :project_id AND user_id = :user_id",
+            {"project_id": project_id, "user_id": user_id},
         ).fetchone()
         if project is None:
             raise ApiError(404, "PROJECT_NOT_FOUND", f"project not found: {project_id}")
@@ -299,27 +501,30 @@ def save_project_events(
                         id, project_id, user_id, external_event_id, action_type, slide_idx,
                         entity_type, entity_id, source, before_json, after_json, payload_json, created_at
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (
+                        :id, :project_id, :user_id, :external_event_id, :action_type, :slide_idx,
+                        :entity_type, :entity_id, :source, :before_json, :after_json, :payload_json, :created_at
+                    )
                     """,
-                    (
-                        f"evt_{uuid.uuid4().hex[:12]}",
-                        project_id,
-                        user_id,
-                        external_event_id,
-                        str(event.get("action_type") or "unknown"),
-                        event.get("slide_idx"),
-                        event.get("entity_type"),
-                        event.get("entity_id"),
-                        event.get("source"),
-                        json_text(event.get("before")) if event.get("before") is not None else None,
-                        json_text(event.get("after")) if event.get("after") is not None else None,
-                        json_text(event.get("payload") or {}),
-                        str(event.get("created_at") or _now_iso()),
-                    ),
+                    {
+                        "id": f"evt_{uuid.uuid4().hex[:12]}",
+                        "project_id": project_id,
+                        "user_id": user_id,
+                        "external_event_id": external_event_id,
+                        "action_type": str(event.get("action_type") or "unknown"),
+                        "slide_idx": event.get("slide_idx"),
+                        "entity_type": event.get("entity_type"),
+                        "entity_id": event.get("entity_id"),
+                        "source": event.get("source"),
+                        "before_json": json_text(event.get("before")) if event.get("before") is not None else None,
+                        "after_json": json_text(event.get("after")) if event.get("after") is not None else None,
+                        "payload_json": json_text(event.get("payload") or {}),
+                        "created_at": str(event.get("created_at") or _now_iso()),
+                    },
                 )
                 saved += 1
             except Exception as exc:
-                if "UNIQUE constraint failed" in str(exc):
+                if _is_unique_error(exc):
                     skipped += 1
                     continue
                 raise
@@ -364,28 +569,47 @@ def upsert_review_settings(
 ) -> Dict[str, Any]:
     now = _now_iso()
     with db_conn() as conn:
-        existing = conn.execute(
-            "SELECT id FROM review_settings WHERE scope_type = ? AND scope_key IS ?",
-            (scope_type, scope_key),
-        ).fetchone()
+        if scope_key is None:
+            existing = conn.execute(
+                "SELECT id FROM review_settings WHERE scope_type = :scope_type AND scope_key IS NULL",
+                {"scope_type": scope_type},
+            ).fetchone()
+        else:
+            existing = conn.execute(
+                "SELECT id FROM review_settings WHERE scope_type = :scope_type AND scope_key = :scope_key",
+                {"scope_type": scope_type, "scope_key": scope_key},
+            ).fetchone()
         row_id = existing["id"] if existing else f"review_{uuid.uuid4().hex[:12]}"
         if existing is None:
             conn.execute(
                 """
                 INSERT INTO review_settings (
                     id, scope_type, scope_key, layout_review_mode, script_review_mode, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (:id, :scope_type, :scope_key, :layout_review_mode, :script_review_mode, :created_at, :updated_at)
                 """,
-                (row_id, scope_type, scope_key, layout_review_mode, script_review_mode, now, now),
+                {
+                    "id": row_id,
+                    "scope_type": scope_type,
+                    "scope_key": scope_key,
+                    "layout_review_mode": layout_review_mode,
+                    "script_review_mode": script_review_mode,
+                    "created_at": now,
+                    "updated_at": now,
+                },
             )
         else:
             conn.execute(
                 """
                 UPDATE review_settings
-                SET layout_review_mode = ?, script_review_mode = ?, updated_at = ?
-                WHERE id = ?
+                SET layout_review_mode = :layout_review_mode, script_review_mode = :script_review_mode, updated_at = :updated_at
+                WHERE id = :id
                 """,
-                (layout_review_mode, script_review_mode, now, row_id),
+                {
+                    "layout_review_mode": layout_review_mode,
+                    "script_review_mode": script_review_mode,
+                    "updated_at": now,
+                    "id": row_id,
+                },
             )
     return {
         "scope_type": scope_type,
@@ -404,37 +628,47 @@ def join_experiment(*, session_token: str, invite_code: str) -> Dict[str, Any]:
     now = _now_iso()
     with db_conn() as conn:
         experiment = conn.execute(
-            "SELECT id, name, invite_code FROM experiments WHERE invite_code = ?",
-            (code,),
+            "SELECT id, name, invite_code FROM experiments WHERE invite_code = :invite_code",
+            {"invite_code": code},
         ).fetchone()
         if experiment is None:
             raise ApiError(404, "EXPERIMENT_NOT_FOUND", "実験コードが見つかりません。")
         conn.execute(
-            "UPDATE users SET user_kind = ?, updated_at = ? WHERE id = ?",
-            ("experiment_participant", now, context["user"]["id"]),
+            "UPDATE users SET user_kind = :user_kind, updated_at = :updated_at WHERE id = :user_id",
+            {"user_kind": "experiment_participant", "updated_at": now, "user_id": context["user"]["id"]},
         )
         conn.execute(
             """
             UPDATE user_sessions
-            SET experiment_id = ?, updated_at = ?, last_seen_at = ?
-            WHERE id = ?
+            SET experiment_id = :experiment_id, updated_at = :updated_at, last_seen_at = :last_seen_at
+            WHERE id = :session_id
             """,
-            (experiment["id"], now, now, context["session_id"]),
+            {
+                "experiment_id": experiment["id"],
+                "updated_at": now,
+                "last_seen_at": now,
+                "session_id": context["session_id"],
+            },
         )
         existing = conn.execute(
             """
             SELECT id FROM experiment_participants
-            WHERE experiment_id = ? AND user_id = ?
+            WHERE experiment_id = :experiment_id AND user_id = :user_id
             """,
-            (experiment["id"], context["user"]["id"]),
+            {"experiment_id": experiment["id"], "user_id": context["user"]["id"]},
         ).fetchone()
         if existing is None:
             conn.execute(
                 """
                 INSERT INTO experiment_participants (id, experiment_id, user_id, joined_at)
-                VALUES (?, ?, ?, ?)
+                VALUES (:id, :experiment_id, :user_id, :joined_at)
                 """,
-                (f"participant_{uuid.uuid4().hex[:12]}", experiment["id"], context["user"]["id"], now),
+                {
+                    "id": f"participant_{uuid.uuid4().hex[:12]}",
+                    "experiment_id": experiment["id"],
+                    "user_id": context["user"]["id"],
+                    "joined_at": now,
+                },
             )
     return {
         "experiment": {
@@ -463,20 +697,23 @@ def save_layout_review_records(
                 INSERT INTO layout_review_records (
                     id, project_id, user_id, slide_idx, highlight_id, review_source, decision,
                     before_json, after_json, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (
+                    :id, :project_id, :user_id, :slide_idx, :highlight_id, :review_source, :decision,
+                    :before_json, :after_json, :created_at
+                )
                 """,
-                (
-                    f"lrev_{uuid.uuid4().hex[:12]}",
-                    project_id,
-                    user_id,
-                    record.get("slide_idx"),
-                    record.get("highlight_id"),
-                    str(record.get("review_source") or "human"),
-                    str(record.get("decision") or "accepted"),
-                    json_text(record.get("before")) if record.get("before") is not None else None,
-                    json_text(record.get("after")) if record.get("after") is not None else None,
-                    str(record.get("created_at") or _now_iso()),
-                ),
+                {
+                    "id": f"lrev_{uuid.uuid4().hex[:12]}",
+                    "project_id": project_id,
+                    "user_id": user_id,
+                    "slide_idx": record.get("slide_idx"),
+                    "highlight_id": record.get("highlight_id"),
+                    "review_source": str(record.get("review_source") or "human"),
+                    "decision": str(record.get("decision") or "accepted"),
+                    "before_json": json_text(record.get("before")) if record.get("before") is not None else None,
+                    "after_json": json_text(record.get("after")) if record.get("after") is not None else None,
+                    "created_at": str(record.get("created_at") or _now_iso()),
+                },
             )
             saved += 1
     return {"saved": saved}
@@ -496,20 +733,23 @@ def save_script_review_records(
                 INSERT INTO script_review_records (
                     id, project_id, user_id, slide_idx, sentence_id, review_step,
                     before_text, after_text, changed_fields_json, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (
+                    :id, :project_id, :user_id, :slide_idx, :sentence_id, :review_step,
+                    :before_text, :after_text, :changed_fields_json, :created_at
+                )
                 """,
-                (
-                    f"srev_{uuid.uuid4().hex[:12]}",
-                    project_id,
-                    user_id,
-                    record.get("slide_idx"),
-                    record.get("sentence_id"),
-                    str(record.get("review_step") or "script_review"),
-                    record.get("before_text"),
-                    record.get("after_text"),
-                    json_text(record.get("changed_fields") or []),
-                    str(record.get("created_at") or _now_iso()),
-                ),
+                {
+                    "id": f"srev_{uuid.uuid4().hex[:12]}",
+                    "project_id": project_id,
+                    "user_id": user_id,
+                    "slide_idx": record.get("slide_idx"),
+                    "sentence_id": record.get("sentence_id"),
+                    "review_step": str(record.get("review_step") or "script_review"),
+                    "before_text": record.get("before_text"),
+                    "after_text": record.get("after_text"),
+                    "changed_fields_json": json_text(record.get("changed_fields") or []),
+                    "created_at": str(record.get("created_at") or _now_iso()),
+                },
             )
             saved += 1
     return {"saved": saved}
@@ -518,8 +758,8 @@ def save_script_review_records(
 def get_project_review_state(project_id: str, user_id: str) -> Dict[str, Any]:
     with db_conn() as conn:
         project = conn.execute(
-            "SELECT review_states_json FROM projects WHERE id = ? AND user_id = ?",
-            (project_id, user_id),
+            "SELECT review_states_json FROM projects WHERE id = :project_id AND user_id = :user_id",
+            {"project_id": project_id, "user_id": user_id},
         ).fetchone()
         if project is None:
             raise ApiError(404, "PROJECT_NOT_FOUND", f"project not found: {project_id}")

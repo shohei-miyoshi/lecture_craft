@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { API_URL } from "../utils/constants.js";
+import { authFetch } from "../utils/sessionStore.js";
 
 function cardStyle(accent) {
   return {
@@ -166,8 +166,8 @@ export default function AdminDashboard({ addToast }) {
     setError("");
     try {
       const [overviewRes, settingsRes] = await Promise.all([
-        fetch(`${API_URL}/api/admin/overview?limit=12`),
-        fetch(`${API_URL}/api/admin/review-settings`),
+        authFetch(`/api/admin/overview?limit=12`, { method: "GET" }),
+        authFetch("/api/admin/review-settings", { method: "GET" }),
       ]);
       if (!overviewRes.ok) throw new Error(`HTTP ${overviewRes.status}`);
       if (!settingsRes.ok) throw new Error(`HTTP ${settingsRes.status}`);
@@ -199,7 +199,7 @@ export default function AdminDashboard({ addToast }) {
         layout_review_mode: layoutMode,
         script_review_mode: scriptMode,
       };
-      const res = await fetch(`${API_URL}/api/admin/review-settings`, {
+      const res = await authFetch("/api/admin/review-settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),

@@ -27,6 +27,7 @@ fastapi==0.115.0
 uvicorn==0.30.6
 moviepy==2.2.1
 imageio-ffmpeg==0.6.0
+psycopg[binary]==3.2.9
 
 # ==== Jupyter を使うなら（ノート用・任意）====
 ipykernel==6.30.0
