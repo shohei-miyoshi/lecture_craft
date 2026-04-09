@@ -46,7 +46,7 @@ from .persistence import (
 from .service import ApiError, export_media, save_research_session
 
 
-app = FastAPI(title="Kenkyu Backend API")
+app = FastAPI(title="LectureCraft Backend API")
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 app.add_middleware(
@@ -76,7 +76,7 @@ def health_endpoint():
 
     return {
         "ok": True,
-        "service": "kenkyu-backend-api",
+        "service": "lecture-craft-backend-api",
         "capabilities": {
             "audio_ready": ffmpeg_path is not None,
             "video_ready": all(

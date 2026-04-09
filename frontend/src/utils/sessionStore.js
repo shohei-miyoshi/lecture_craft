@@ -1,10 +1,13 @@
 import { API_URL } from "./constants.js";
 
-const SESSION_STORAGE_KEY = "kenkyu_auth_session_v2";
+const SESSION_STORAGE_KEY = "lecture_craft_auth_session_v3";
+const LEGACY_SESSION_STORAGE_KEY = "kenkyu_auth_session_v2";
 
 function loadStoredSession() {
   try {
-    return JSON.parse(localStorage.getItem(SESSION_STORAGE_KEY) ?? "null");
+    const current = localStorage.getItem(SESSION_STORAGE_KEY);
+    if (current) return JSON.parse(current);
+    return JSON.parse(localStorage.getItem(LEGACY_SESSION_STORAGE_KEY) ?? "null");
   } catch {
     return null;
   }
@@ -12,6 +15,7 @@ function loadStoredSession() {
 
 function saveStoredSession(value) {
   localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(value));
+  localStorage.removeItem(LEGACY_SESSION_STORAGE_KEY);
 }
 
 export function getStoredSession() {
@@ -24,6 +28,7 @@ export function getSessionToken() {
 
 export function clearStoredSession() {
   localStorage.removeItem(SESSION_STORAGE_KEY);
+  localStorage.removeItem(LEGACY_SESSION_STORAGE_KEY);
 }
 
 async function authRequest(path, body) {

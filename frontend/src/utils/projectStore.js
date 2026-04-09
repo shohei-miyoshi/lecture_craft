@@ -1,8 +1,10 @@
 import { authFetch, getStoredSession } from "./sessionStore.js";
 
 const LEGACY_STORAGE_KEY = "kenkyu_local_projects_v1";
-const INDEX_STORAGE_KEY_BASE = "kenkyu_local_project_index_v2";
-const MIGRATION_FLAG_KEY_BASE = "kenkyu_local_project_index_v2_migrated";
+const LEGACY_INDEX_STORAGE_KEY_BASE = "kenkyu_local_project_index_v2";
+const INDEX_STORAGE_KEY_BASE = "lecture_craft_local_project_index_v3";
+const LEGACY_MIGRATION_FLAG_KEY_BASE = "kenkyu_local_project_index_v2_migrated";
+const MIGRATION_FLAG_KEY_BASE = "lecture_craft_local_project_index_v3_migrated";
 const DB_NAME = "kenkyu-project-store";
 const DB_VERSION = 1;
 const STORE_NAME = "projects";
@@ -18,13 +20,23 @@ function scopedIndexKey() {
   return `${INDEX_STORAGE_KEY_BASE}_${currentStorageScope()}`;
 }
 
+function legacyScopedIndexKey() {
+  return `${LEGACY_INDEX_STORAGE_KEY_BASE}_${currentStorageScope()}`;
+}
+
 function scopedMigrationFlagKey() {
   return `${MIGRATION_FLAG_KEY_BASE}_${currentStorageScope()}`;
 }
 
+function legacyScopedMigrationFlagKey() {
+  return `${LEGACY_MIGRATION_FLAG_KEY_BASE}_${currentStorageScope()}`;
+}
+
 function loadIndex() {
   try {
-    return JSON.parse(localStorage.getItem(scopedIndexKey()) ?? "[]");
+    const current = localStorage.getItem(scopedIndexKey());
+    if (current) return JSON.parse(current);
+    return JSON.parse(localStorage.getItem(legacyScopedIndexKey()) ?? "[]");
   } catch {
     return [];
   }
@@ -32,6 +44,7 @@ function loadIndex() {
 
 function saveIndex(rows) {
   localStorage.setItem(scopedIndexKey(), JSON.stringify(rows));
+  localStorage.removeItem(legacyScopedIndexKey());
 }
 
 function loadLegacyRows() {
@@ -189,7 +202,15 @@ async function migrateLegacyStorage() {
   if (migrationPromise) return migrationPromise;
   migrationPromise = (async () => {
     const migrationFlagKey = scopedMigrationFlagKey();
-    if (localStorage.getItem(migrationFlagKey) === "done") return;
+    if (
+      localStorage.getItem(migrationFlagKey) === "done" ||
+      localStorage.getItem(legacyScopedMigrationFlagKey()) === "done"
+    ) {
+      if (localStorage.getItem(legacyScopedMigrationFlagKey()) === "done") {
+        localStorage.setItem(migrationFlagKey, "done");
+      }
+      return;
+    }
 
     const legacyRows = loadLegacyRows();
     if (!legacyRows.length) {

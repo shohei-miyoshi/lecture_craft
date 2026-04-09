@@ -90,14 +90,15 @@ export OPENAI_API_KEY=...
 ローカルデバッグ時は、次のどちらかでも動作します。
 
 ```bash
-mkdir -p ~/.config/kenkyu
-printf '%s\n' 'YOUR_OPENAI_KEY' > ~/.config/kenkyu/openai_api_key
+mkdir -p ~/.config/lecture_craft
+printf '%s\n' 'YOUR_OPENAI_KEY' > ~/.config/lecture_craft/openai_api_key
 ```
 
 優先順位は `OPENAI_API_KEY` 環境変数が先、その次に
-`~/.config/kenkyu/openai_api_key` /
-`~/.config/kenkyu/openai_api_key.txt` /
-`~/.config/kenkyu/apikey.txt` です。
+`~/.config/lecture_craft/openai_api_key` /
+`~/.config/lecture_craft/openai_api_key.txt` /
+`~/.config/lecture_craft/apikey.txt` です。
+互換のため、従来の `~/.config/kenkyu/...` も読みます。
 
 起動確認:
 
@@ -114,7 +115,7 @@ curl http://127.0.0.1:8000/api/health
 ここでは generate / export / 研究セッションの利用状況、編集傾向、日別の活動量を返します。
 
 ユーザ別保存と編集ログ保存の正本は backend 側で管理します。
-ローカル開発では `backend/data/kenkyu_app.db` の SQLite を使い、
+ローカル開発では `backend/data/lecture_craft_app.db` の SQLite を使い、
 実運用では `DATABASE_URL` で PostgreSQL に切り替える想定です。
 DB 自体は外部ストレージですが、接続設定・テーブル定義・保存 API は `backend/app/` のコードにあります。
 最初に作成されたアカウントは管理者になり、管理系 API は管理者のみ利用できます。

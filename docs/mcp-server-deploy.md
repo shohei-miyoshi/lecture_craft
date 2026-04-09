@@ -28,7 +28,7 @@ MCP サーバは「配置先のマシン」であって、ブラウザ向け API
 ## サーバ側の配置例
 
 ```text
-/opt/kenkyu/kenkyu
+/home/ladev/lecture_craft
   ├── frontend/
   ├── backend/
   └── docs/
@@ -37,8 +37,8 @@ MCP サーバは「配置先のマシン」であって、ブラウザ向け API
 ## サーバ初回セットアップ例
 
 ```bash
-git clone <your-repo-url> /opt/kenkyu/kenkyu
-cd /opt/kenkyu/kenkyu/backend
+git clone <your-repo-url> /home/ladev/lecture_craft
+cd /home/ladev/lecture_craft/backend
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements_min.txt
@@ -60,9 +60,10 @@ export OPENAI_API_KEY=...
 
 - 実運用: `OPENAI_API_KEY` をサーバ環境変数で渡す
 - 実運用で DB を使う場合も、`DATABASE_URL` をサーバ環境変数で渡す
-- 手元デバッグ: `~/.config/kenkyu/openai_api_key`、
-  `~/.config/kenkyu/openai_api_key.txt`、
-  `~/.config/kenkyu/apikey.txt` を使ってよい
+- 手元デバッグ: `~/.config/lecture_craft/openai_api_key`、
+  `~/.config/lecture_craft/openai_api_key.txt`、
+  `~/.config/lecture_craft/apikey.txt` を使ってよい
+- 互換のため従来の `~/.config/kenkyu/...` も読める
 - どちらの場合も、秘密情報はリポジトリ内に置かない
 
 補足:
@@ -80,12 +81,12 @@ export OPENAI_API_KEY=...
 サーバで毎回手動更新します。
 
 ```bash
-cd /opt/kenkyu/kenkyu
+cd /home/ladev/lecture_craft
 git pull
 cd backend
 source .venv/bin/activate
 pip install -r requirements_min.txt
-sudo systemctl restart kenkyu-backend
+sudo systemctl restart lecture-craft-backend
 ```
 
 ### 一段よい形
@@ -101,14 +102,14 @@ sudo systemctl restart kenkyu-backend
 
 ```ini
 [Unit]
-Description=Kenkyu Backend API
+Description=LectureCraft Backend API
 After=network.target
 
 [Service]
-WorkingDirectory=/opt/kenkyu/kenkyu/backend
-Environment="PATH=/opt/kenkyu/kenkyu/backend/.venv/bin"
+WorkingDirectory=/home/ladev/lecture_craft/backend
+Environment="PATH=/home/ladev/lecture_craft/backend/.venv/bin"
 Environment="OPENAI_API_KEY=YOUR_REAL_KEY"
-ExecStart=/opt/kenkyu/kenkyu/backend/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
+ExecStart=/home/ladev/lecture_craft/backend/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
 Restart=always
 
 [Install]

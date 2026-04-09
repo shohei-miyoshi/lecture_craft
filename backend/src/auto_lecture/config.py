@@ -8,30 +8,43 @@ from dataclasses import dataclass
 # ============================================================
 
 # --- GPT モデル ---
-def _env_str(name: str, default: str) -> str:
-    return os.getenv(name, default).strip() or default
+def _env_str(name: str, default: str, legacy_name: str | None = None) -> str:
+    for env_name in (name, legacy_name):
+        if not env_name:
+            continue
+        value = os.getenv(env_name)
+        if value is not None and value.strip():
+            return value.strip()
+    return default
 
 
-def _env_int(name: str, default: int) -> int:
-    try:
-        return int(os.getenv(name, str(default)))
-    except Exception:
-        return default
+def _env_int(name: str, default: int, legacy_name: str | None = None) -> int:
+    for env_name in (name, legacy_name):
+        if not env_name:
+            continue
+        value = os.getenv(env_name)
+        if value is None or not str(value).strip():
+            continue
+        try:
+            return int(value)
+        except Exception:
+            continue
+    return default
 
 
 # ナレーション生成
-API_MODEL_EXPLANATION = _env_str("KENKYU_MODEL_EXPLANATION", "gpt-5")
+API_MODEL_EXPLANATION = _env_str("LECTURE_CRAFT_MODEL_EXPLANATION", "gpt-5", "KENKYU_MODEL_EXPLANATION")
 API_MODEL_EXPLANATION_TEMPERATURE = 1.0
 
 # 各ステップごとの上書き設定
-API_MODEL_DECK_SCAN = _env_str("KENKYU_MODEL_DECK_SCAN", API_MODEL_EXPLANATION)
-API_MODEL_AUDIO_MATERIAL = _env_str("KENKYU_MODEL_AUDIO_MATERIAL", API_MODEL_EXPLANATION)
-API_MODEL_AUDIO_OUTLINE = _env_str("KENKYU_MODEL_AUDIO_OUTLINE", API_MODEL_EXPLANATION)
-API_MODEL_AUDIO_NARRATION = _env_str("KENKYU_MODEL_AUDIO_NARRATION", API_MODEL_EXPLANATION)
-API_MODEL_AUDIO_STITCH = _env_str("KENKYU_MODEL_AUDIO_STITCH", API_MODEL_EXPLANATION)
+API_MODEL_DECK_SCAN = _env_str("LECTURE_CRAFT_MODEL_DECK_SCAN", API_MODEL_EXPLANATION, "KENKYU_MODEL_DECK_SCAN")
+API_MODEL_AUDIO_MATERIAL = _env_str("LECTURE_CRAFT_MODEL_AUDIO_MATERIAL", API_MODEL_EXPLANATION, "KENKYU_MODEL_AUDIO_MATERIAL")
+API_MODEL_AUDIO_OUTLINE = _env_str("LECTURE_CRAFT_MODEL_AUDIO_OUTLINE", API_MODEL_EXPLANATION, "KENKYU_MODEL_AUDIO_OUTLINE")
+API_MODEL_AUDIO_NARRATION = _env_str("LECTURE_CRAFT_MODEL_AUDIO_NARRATION", API_MODEL_EXPLANATION, "KENKYU_MODEL_AUDIO_NARRATION")
+API_MODEL_AUDIO_STITCH = _env_str("LECTURE_CRAFT_MODEL_AUDIO_STITCH", API_MODEL_EXPLANATION, "KENKYU_MODEL_AUDIO_STITCH")
 
 # アニメーション割り当て
-API_MODEL_ANIMATION = _env_str("KENKYU_MODEL_ANIMATION", "gpt-5")
+API_MODEL_ANIMATION = _env_str("LECTURE_CRAFT_MODEL_ANIMATION", "gpt-5", "KENKYU_MODEL_ANIMATION")
 API_MODEL_ANIMATION_TEMPERATURE = 1.0
 
 # --- TTS ---
@@ -43,11 +56,15 @@ API_TTS_VOICE_SPEED = 1.0
 OPENAI_API_KEY_ENV = "OPENAI_API_KEY"
 
 # ローカルデバッグ時の秘密情報置き場
-LOCAL_CONFIG_DIR = Path.home() / ".config" / "kenkyu"
+LOCAL_CONFIG_DIR = Path.home() / ".config" / "lecture_craft"
+LEGACY_LOCAL_CONFIG_DIR = Path.home() / ".config" / "kenkyu"
 LOCAL_OPENAI_API_KEY_FILES = (
     LOCAL_CONFIG_DIR / "openai_api_key",
     LOCAL_CONFIG_DIR / "openai_api_key.txt",
     LOCAL_CONFIG_DIR / "apikey.txt",
+    LEGACY_LOCAL_CONFIG_DIR / "openai_api_key",
+    LEGACY_LOCAL_CONFIG_DIR / "openai_api_key.txt",
+    LEGACY_LOCAL_CONFIG_DIR / "apikey.txt",
 )
 
 # 互換のため残すが、gpt_client ではファイル読み込みを行わない
@@ -89,7 +106,10 @@ LECTURE_OUTPUTS_FINAL_DIR_NAME = "output_final"
 #  実行制御
 # ============================================================
 
-AUDIO_MATERIAL_MAX_WORKERS = max(1, _env_int("KENKYU_AUDIO_MATERIAL_MAX_WORKERS", 3))
+AUDIO_MATERIAL_MAX_WORKERS = max(
+    1,
+    _env_int("LECTURE_CRAFT_AUDIO_MATERIAL_MAX_WORKERS", 3, "KENKYU_AUDIO_MATERIAL_MAX_WORKERS"),
+)
 
 # ============================================================
 #  データクラス

@@ -26,7 +26,10 @@ def _now_iso() -> str:
 
 def _job_worker_count() -> int:
     try:
-        return max(1, int(os.getenv("KENKYU_JOB_WORKERS", "1")))
+        return max(
+            1,
+            int(os.getenv("LECTURE_CRAFT_JOB_WORKERS", os.getenv("KENKYU_JOB_WORKERS", "1"))),
+        )
     except Exception:
         return 1
 
@@ -73,7 +76,7 @@ class JobManager:
                     target=self._worker_loop,
                     args=(idx,),
                     daemon=True,
-                    name=f"kenkyu-job-worker-{idx}",
+                    name=f"lecture-craft-job-worker-{idx}",
                 )
                 thread.start()
             self._started = True

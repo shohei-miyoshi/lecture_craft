@@ -47,7 +47,7 @@ cat <<'EOF'
 Backend setup complete.
 
 Next:
-  1. Put your key in ~/.config/kenkyu/apikey.txt
+  1. Put your key in ~/.config/lecture_craft/apikey.txt
      or export OPENAI_API_KEY
   2. Run:
      bash scripts/dev_backend.sh

@@ -19,7 +19,7 @@ except Exception:  # pragma: no cover - optional dependency in local dev
 
 APP_ROOT = Path(__file__).resolve().parents[1]
 DATA_ROOT = APP_ROOT / "data"
-DEFAULT_SQLITE_PATH = DATA_ROOT / "kenkyu_app.db"
+DEFAULT_SQLITE_PATH = DATA_ROOT / "lecture_craft_app.db"
 POSTGRES_PREFIXES = ("postgresql://", "postgres://")
 PARAM_PATTERN = re.compile(r"(?<!:):([A-Za-z_][A-Za-z0-9_]*)")
 

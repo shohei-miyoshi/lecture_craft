@@ -19,8 +19,9 @@ def create_client(api_key_path: Path | str = config.API_KEY_PATH) -> OpenAI:
 
     セキュリティ方針:
     - 本番/実運用は `OPENAI_API_KEY` 環境変数を優先
-    - ローカルデバッグ時のみ `~/.config/kenkyu/openai_api_key` または
-      `~/.config/kenkyu/openai_api_key.txt` をフォールバックとして使う
+    - ローカルデバッグ時のみ `~/.config/lecture_craft/openai_api_key` または
+      `~/.config/lecture_craft/openai_api_key.txt` を優先フォールバックとして使う
+    - 互換のため `~/.config/kenkyu/...` も引き続き読む
     - ワークスペース内ファイルは読まない
     - `api_key_path` 引数は互換のため受け取るが使用しない
     """
@@ -32,7 +33,7 @@ def create_client(api_key_path: Path | str = config.API_KEY_PATH) -> OpenAI:
         raise RuntimeError(
             f"{config.OPENAI_API_KEY_ENV} が設定されておらず、"
             f"{config.LOCAL_CONFIG_DIR} にも API キーが見つかりません。"
-            "本番は環境変数、ローカルデバッグでは ~/.config/kenkyu 配下のキーを使ってください。"
+            "本番は環境変数、ローカルデバッグでは ~/.config/lecture_craft 配下のキーを使ってください。"
         )
 
     client = OpenAI(api_key=api_key)
