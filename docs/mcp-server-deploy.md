@@ -59,10 +59,16 @@ export OPENAI_API_KEY=...
 ## 秘密情報の持ち方
 
 - 実運用: `OPENAI_API_KEY` をサーバ環境変数で渡す
+- 実運用で DB を使う場合も、`DATABASE_URL` をサーバ環境変数で渡す
 - 手元デバッグ: `~/.config/kenkyu/openai_api_key`、
   `~/.config/kenkyu/openai_api_key.txt`、
   `~/.config/kenkyu/apikey.txt` を使ってよい
 - どちらの場合も、秘密情報はリポジトリ内に置かない
+
+補足:
+- DB そのものは backend の外にあるサービスです
+- ただし接続設定、テーブル定義、保存 API は `backend/app/` のコードで管理します
+- ローカルでは SQLite、実運用では PostgreSQL を想定しています
 
 ## 更新運用
 

@@ -83,6 +83,12 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000
 API キーはファイルではなく `OPENAI_API_KEY` 環境変数で渡してください。
 「私に読ませたくない秘密情報」は、このワークスペース内に置かず、MCP サーバやローカルシェルの環境変数として設定するのが安全です。
 
+プロジェクト保存やユーザ別の編集ログ保存の正本は backend 側に置きます。
+データベースそのものは backend の外側にあるストレージですが、
+接続設定・テーブル定義・保存 API は `backend/app/` のコードで管理します。
+現在の開発環境では `backend/data/kenkyu_app.db` の SQLite を使い、
+実運用では `DATABASE_URL` を使って PostgreSQL に切り替える前提で進めます。
+
 ローカルデバッグ用のフォールバックとして、`~/.config/kenkyu/openai_api_key`、
 `~/.config/kenkyu/openai_api_key.txt`、`~/.config/kenkyu/apikey.txt` も参照します。
 このディレクトリはリポジトリ外なので、秘密情報を手元で分離できます。

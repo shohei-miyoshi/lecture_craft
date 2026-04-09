@@ -152,17 +152,30 @@ function TableSection({ title, rows, columns, emptyText }) {
 
 export default function AdminDashboard({ addToast }) {
   const [data, setData] = useState(null);
+  const [reviewSettings, setReviewSettings] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [settingsBusy, setSettingsBusy] = useState(false);
+  const [scopeType, setScopeType] = useState("global");
+  const [scopeKey, setScopeKey] = useState("");
+  const [layoutMode, setLayoutMode] = useState("off");
+  const [scriptMode, setScriptMode] = useState("off");
 
   const load = async ({ silent = false } = {}) => {
     if (!silent) setLoading(true);
     setError("");
     try {
-      const res = await fetch(`${API_URL}/api/admin/overview?limit=12`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const next = await res.json();
+      const [overviewRes, settingsRes] = await Promise.all([
+        fetch(`${API_URL}/api/admin/overview?limit=12`),
+        fetch(`${API_URL}/api/admin/review-settings`),
+      ]);
+      if (!overviewRes.ok) throw new Error(`HTTP ${overviewRes.status}`);
+      if (!settingsRes.ok) throw new Error(`HTTP ${settingsRes.status}`);
+      const [next, settings] = await Promise.all([overviewRes.json(), settingsRes.json()]);
       setData(next);
+      setReviewSettings(settings);
+      setLayoutMode(settings?.global?.layout_review_mode ?? "off");
+      setScriptMode(settings?.global?.script_review_mode ?? "off");
     } catch (err) {
       setError(err.message || "failed");
       if (!silent) addToast?.("er", "管理ダッシュボードの取得に失敗しました");
@@ -176,6 +189,30 @@ export default function AdminDashboard({ addToast }) {
     const timer = setInterval(() => load({ silent: true }), 20000);
     return () => clearInterval(timer);
   }, []);
+
+  const saveReviewSettings = async () => {
+    setSettingsBusy(true);
+    try {
+      const payload = {
+        scope_type: scopeType,
+        scope_key: scopeType === "experiment" ? scopeKey.trim() || null : null,
+        layout_review_mode: layoutMode,
+        script_review_mode: scriptMode,
+      };
+      const res = await fetch(`${API_URL}/api/admin/review-settings`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      await load({ silent: true });
+      addToast?.("ok", "確認ステップ設定を更新しました");
+    } catch (err) {
+      addToast?.("er", err.message || "設定更新に失敗しました");
+    } finally {
+      setSettingsBusy(false);
+    }
+  };
 
   const jobsByMode = useMemo(() => data?.breakdowns?.jobs_by_mode ?? [], [data]);
   const exportsByType = useMemo(() => data?.breakdowns?.exports_by_type ?? [], [data]);
@@ -212,6 +249,77 @@ export default function AdminDashboard({ addToast }) {
           </div>
         ) : (
           <>
+            <section style={{ padding: 16, borderRadius: 14, background: "var(--s2)", border: "1px solid var(--bd)", marginBottom: 18 }}>
+              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, marginBottom: 12 }}>
+                <div>
+                  <div style={{ fontFamily: "var(--ff)", fontSize: 13, marginBottom: 6 }}>生成フロー設定</div>
+                  <div style={{ fontSize: 11, color: "var(--ts)", lineHeight: 1.6 }}>
+                    LP 後の領域確認ステップと、台本生成後の確認ステップを管理者画面から切り替えられます。
+                  </div>
+                </div>
+                <div style={{ fontSize: 10, color: "var(--tm)" }}>
+                  現在の全体設定: 領域 {reviewSettings?.global?.layout_review_mode ?? "off"} / 台本 {reviewSettings?.global?.script_review_mode ?? "off"}
+                </div>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr auto", gap: 10, alignItems: "end", marginBottom: 14 }}>
+                <label style={{ display: "grid", gap: 6 }}>
+                  <span style={{ fontSize: 10, color: "var(--tm)" }}>対象</span>
+                  <select value={scopeType} onChange={(e) => setScopeType(e.target.value)} style={{ padding: "9px 10px", border: "1px solid var(--bd2)", background: "var(--sur)", color: "var(--tp)" }}>
+                    <option value="global">全体デフォルト</option>
+                    <option value="experiment">実験単位</option>
+                  </select>
+                </label>
+
+                <label style={{ display: "grid", gap: 6 }}>
+                  <span style={{ fontSize: 10, color: "var(--tm)" }}>領域確認ステップ</span>
+                  <select value={layoutMode} onChange={(e) => setLayoutMode(e.target.value)} style={{ padding: "9px 10px", border: "1px solid var(--bd2)", background: "var(--sur)", color: "var(--tp)" }}>
+                    <option value="off">off</option>
+                    <option value="human">human</option>
+                    <option value="ai">ai</option>
+                    <option value="ai_then_human">ai_then_human</option>
+                  </select>
+                </label>
+
+                <label style={{ display: "grid", gap: 6 }}>
+                  <span style={{ fontSize: 10, color: "var(--tm)" }}>台本確認ステップ</span>
+                  <select value={scriptMode} onChange={(e) => setScriptMode(e.target.value)} style={{ padding: "9px 10px", border: "1px solid var(--bd2)", background: "var(--sur)", color: "var(--tp)" }}>
+                    <option value="off">off</option>
+                    <option value="human">human</option>
+                  </select>
+                </label>
+
+                <button onClick={saveReviewSettings} disabled={settingsBusy || (scopeType === "experiment" && !scopeKey.trim())} style={{ padding: "9px 14px", border: "1px solid rgba(130,178,255,.4)", background: "var(--ac)", color: "#fff", fontSize: 11, borderRadius: 10, opacity: settingsBusy ? 0.7 : 1 }}>
+                  {settingsBusy ? "保存中..." : "設定を保存"}
+                </button>
+              </div>
+
+              {scopeType === "experiment" && (
+                <label style={{ display: "grid", gap: 6, marginBottom: 12, maxWidth: 320 }}>
+                  <span style={{ fontSize: 10, color: "var(--tm)" }}>実験ID</span>
+                  <input
+                    value={scopeKey}
+                    onChange={(e) => setScopeKey(e.target.value)}
+                    placeholder="experiment_xxx"
+                    style={{ padding: "9px 10px", border: "1px solid var(--bd2)", background: "var(--sur)", color: "var(--tp)" }}
+                  />
+                </label>
+              )}
+
+              {(reviewSettings?.experiments?.length ?? 0) > 0 && (
+                <div style={{ display: "grid", gap: 8 }}>
+                  <div style={{ fontSize: 10, color: "var(--tm)" }}>実験単位の上書き設定</div>
+                  {reviewSettings.experiments.map((row) => (
+                    <div key={row.experiment_id} style={{ display: "grid", gridTemplateColumns: "1fr auto auto", gap: 10, padding: "10px 12px", background: "var(--sur)", border: "1px solid var(--bd)" }}>
+                      <div style={{ fontFamily: "var(--fm)", color: "var(--tp)" }}>{row.experiment_id}</div>
+                      <div style={{ fontSize: 11, color: "var(--ts)" }}>領域 {row.layout_review_mode}</div>
+                      <div style={{ fontSize: 11, color: "var(--ts)" }}>台本 {row.script_review_mode}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+
             <div style={{ display: "grid", gridTemplateColumns: "repeat(6, minmax(0, 1fr))", gap: 12, marginBottom: 18 }}>
               <MetricCard title="生成ジョブ" value={data?.usage?.jobs_total} hint="累計ジョブ数" accent="rgba(91,141,239,.24)" tone="var(--ac)" />
               <MetricCard title="直近7日" value={data?.usage?.jobs_last_7d} hint="生成数" accent="rgba(76,175,130,.24)" tone="var(--gr)" />

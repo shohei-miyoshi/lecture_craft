@@ -9,6 +9,7 @@ backend/apikey.txt
 backend/.env
 backend/*.env
 backend/outputs/
+backend/data/
 backend/teachingmaterial/img/
 backend/teachingmaterial/pdf/
 backend/collected_source/

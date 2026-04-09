@@ -98,11 +98,12 @@ export default function App() {
     const name = forcedName ?? state.projectMeta?.name ?? pdfFile?.name?.replace(/\.pdf$/i, "") ?? "新しいプロジェクト";
     const payload = buildProjectPayload(state, name);
     try {
-      await saveProject(payload);
-      dispatch({ type: "SET", k: "projectMeta", v: payload.data.project_meta });
-      dispatch({ type: "SET", k: "savedFingerprint", v: fingerprintProjectState(state, name) });
+      const saved = await saveProject(payload);
+      const nextMeta = saved?.data?.project_meta ?? payload.data.project_meta;
+      dispatch({ type: "SET", k: "projectMeta", v: nextMeta });
+      dispatch({ type: "SET", k: "savedFingerprint", v: fingerprintProjectState(state, nextMeta?.name ?? name) });
       addToast("ok", `プロジェクト「${name}」を保存しました`);
-      return payload;
+      return saved ?? payload;
     } catch (error) {
       console.warn("Project save failed:", error);
       addToast("er", "プロジェクト保存に失敗しました");

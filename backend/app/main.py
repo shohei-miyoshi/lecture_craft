@@ -3,14 +3,42 @@ from __future__ import annotations
 import importlib.util
 import shutil
 from pathlib import Path
+import uuid
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from .admin import build_admin_overview
+from .db import init_db
 from .jobs import get_job_manager
-from .models import ExportRequest, GenerateRequest, ResearchSessionRequest
+from .models import (
+    ExperimentJoinRequest,
+    ExportRequest,
+    GenerateRequest,
+    LayoutReviewRequest,
+    ProjectEventsRequest,
+    ProjectPatchRequest,
+    ProjectUpsertRequest,
+    ResearchSessionRequest,
+    ReviewSettingsPatchRequest,
+    ScriptReviewRequest,
+)
+from .persistence import (
+    create_guest_session,
+    delete_project_for_user,
+    get_project_for_user,
+    get_project_review_state,
+    get_review_settings,
+    get_session_context,
+    join_experiment,
+    list_projects_for_user,
+    save_layout_review_records,
+    save_project_events,
+    save_project_for_user,
+    save_script_review_records,
+    upsert_review_settings,
+)
 from .service import ApiError, export_media, save_research_session
 
 
@@ -67,7 +95,121 @@ def health_endpoint():
 
 @app.on_event("startup")
 def startup_event() -> None:
+    init_db()
     get_job_manager()
+
+
+def _require_session(x_kenkyu_session: str | None) -> dict:
+    return get_session_context(x_kenkyu_session or "")
+
+
+@app.post("/api/auth/guest")
+def guest_session_endpoint():
+    return create_guest_session()
+
+
+@app.post("/api/experiments/join")
+def experiment_join_endpoint(req: ExperimentJoinRequest, x_kenkyu_session: str | None = Header(default=None)):
+    _require_session(x_kenkyu_session)
+    return join_experiment(session_token=x_kenkyu_session or "", invite_code=req.invite_code)
+
+
+@app.get("/api/projects")
+def projects_list_endpoint(x_kenkyu_session: str | None = Header(default=None)):
+    session = _require_session(x_kenkyu_session)
+    return {"projects": list_projects_for_user(session["user"]["id"])}
+
+
+@app.post("/api/projects")
+def project_create_endpoint(req: ProjectUpsertRequest, x_kenkyu_session: str | None = Header(default=None)):
+    session = _require_session(x_kenkyu_session)
+    project_id = req.client_project_id or f"project_{uuid.uuid4().hex[:12]}"
+    return save_project_for_user(
+        user_id=session["user"]["id"],
+        experiment_id=session.get("experiment_id"),
+        project_id=project_id,
+        name=req.name,
+        data=req.data,
+    )
+
+
+@app.get("/api/projects/{project_id}")
+def project_get_endpoint(project_id: str, x_kenkyu_session: str | None = Header(default=None)):
+    session = _require_session(x_kenkyu_session)
+    return get_project_for_user(project_id, session["user"]["id"])
+
+
+@app.patch("/api/projects/{project_id}")
+def project_patch_endpoint(project_id: str, req: ProjectPatchRequest, x_kenkyu_session: str | None = Header(default=None)):
+    session = _require_session(x_kenkyu_session)
+    current = get_project_for_user(project_id, session["user"]["id"])
+    next_name = req.name or current["name"]
+    next_data = req.data if req.data is not None else current["data"]
+    return save_project_for_user(
+        user_id=session["user"]["id"],
+        experiment_id=session.get("experiment_id"),
+        project_id=project_id,
+        name=next_name,
+        data=next_data,
+    )
+
+
+@app.delete("/api/projects/{project_id}")
+def project_delete_endpoint(project_id: str, x_kenkyu_session: str | None = Header(default=None)):
+    session = _require_session(x_kenkyu_session)
+    delete_project_for_user(project_id, session["user"]["id"])
+    return {"ok": True, "project_id": project_id}
+
+
+@app.post("/api/projects/{project_id}/events")
+def project_events_endpoint(project_id: str, req: ProjectEventsRequest, x_kenkyu_session: str | None = Header(default=None)):
+    session = _require_session(x_kenkyu_session)
+    return save_project_events(
+        project_id=project_id,
+        user_id=session["user"]["id"],
+        events=[row.model_dump() for row in req.events],
+    )
+
+
+@app.get("/api/admin/review-settings")
+def review_settings_get_endpoint():
+    return get_review_settings()
+
+
+@app.patch("/api/admin/review-settings")
+def review_settings_patch_endpoint(req: ReviewSettingsPatchRequest):
+    return upsert_review_settings(
+        scope_type=req.scope_type,
+        scope_key=req.scope_key,
+        layout_review_mode=req.layout_review_mode,
+        script_review_mode=req.script_review_mode,
+    )
+
+
+@app.post("/api/projects/{project_id}/layout-review")
+def layout_review_endpoint(project_id: str, req: LayoutReviewRequest, x_kenkyu_session: str | None = Header(default=None)):
+    session = _require_session(x_kenkyu_session)
+    return save_layout_review_records(
+        project_id=project_id,
+        user_id=session["user"]["id"],
+        records=[row.model_dump() for row in req.records],
+    )
+
+
+@app.post("/api/projects/{project_id}/script-review")
+def script_review_endpoint(project_id: str, req: ScriptReviewRequest, x_kenkyu_session: str | None = Header(default=None)):
+    session = _require_session(x_kenkyu_session)
+    return save_script_review_records(
+        project_id=project_id,
+        user_id=session["user"]["id"],
+        records=[row.model_dump() for row in req.records],
+    )
+
+
+@app.get("/api/projects/{project_id}/review-state")
+def review_state_endpoint(project_id: str, x_kenkyu_session: str | None = Header(default=None)):
+    session = _require_session(x_kenkyu_session)
+    return get_project_review_state(project_id, session["user"]["id"])
 
 
 @app.post("/api/generate")

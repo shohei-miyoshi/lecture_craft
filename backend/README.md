@@ -113,6 +113,11 @@ curl http://127.0.0.1:8000/api/health
 管理ダッシュボード用に `GET /api/admin/overview` も追加しています。
 ここでは generate / export / 研究セッションの利用状況、編集傾向、日別の活動量を返します。
 
+ユーザ別保存と編集ログ保存の正本は backend 側で管理します。
+ローカル開発では `backend/data/kenkyu_app.db` の SQLite を使い、
+実運用では `DATABASE_URL` で PostgreSQL に切り替える想定です。
+DB 自体は外部ストレージですが、接続設定・テーブル定義・保存 API は `backend/app/` のコードにあります。
+
 補足:
 - `backend/.venv` は `Python 3.10` または `3.11` で作ってください
 - `Python 3.14` だと `scipy` がビルド失敗しやすいです

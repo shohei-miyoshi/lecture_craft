@@ -1,3 +1,6 @@
+import { API_URL } from "./constants.js";
+import { clearGuestSession, ensureGuestSession } from "./sessionStore.js";
+
 const LEGACY_STORAGE_KEY = "kenkyu_local_projects_v1";
 const INDEX_STORAGE_KEY = "kenkyu_local_project_index_v2";
 const MIGRATION_FLAG_KEY = "kenkyu_local_project_index_v2_migrated";
@@ -40,6 +43,41 @@ function indexRowFor(project) {
     sentence_count: data.sentences?.length ?? 0,
     highlight_count: data.highlights?.length ?? 0,
   };
+}
+
+function buildEventPayloads(project) {
+  const data = project?.data ?? {};
+  const studyEvents = Array.isArray(data.study_events) ? data.study_events : [];
+  const operationLogs = Array.isArray(data.operation_logs) ? data.operation_logs : [];
+
+  const mappedStudyEvents = studyEvents.map((event) => ({
+    external_event_id: event?.id,
+    action_type: event?.kind ?? "study_event",
+    slide_idx: event?.payload?.slide_idx ?? null,
+    entity_type: "study_event",
+    entity_id: event?.payload?.sentence_id ?? event?.payload?.highlight_id ?? null,
+    source: "study_event",
+    before: event?.payload?.before ?? null,
+    after: event?.payload?.after ?? null,
+    payload: event?.payload ?? {},
+    created_at: event?.at ?? null,
+  }));
+
+  const mappedOperationLogs = operationLogs.map((log) => ({
+    external_event_id: log?.id,
+    action_type: log?.meta?.type ?? "operation_log",
+    slide_idx: log?.meta?.slide_idx ?? null,
+    entity_type: "operation_log",
+    entity_id: log?.meta?.sentence_id ?? log?.meta?.highlight_id ?? null,
+    source: "operation_log",
+    payload: {
+      message: log?.message ?? "",
+      meta: log?.meta ?? {},
+    },
+    created_at: log?.at ?? null,
+  }));
+
+  return [...mappedStudyEvents, ...mappedOperationLogs].filter((row) => row.external_event_id);
 }
 
 function sortIndex(rows) {
@@ -161,54 +199,156 @@ async function migrateLegacyStorage() {
   return migrationPromise;
 }
 
+async function apiRequest(path, options = {}, retry = true) {
+  const session = await ensureGuestSession();
+  const headers = {
+    "Content-Type": "application/json",
+    "X-Kenkyu-Session": session.session_token,
+    ...(options.headers ?? {}),
+  };
+  const res = await fetch(`${API_URL}${path}`, { ...options, headers });
+  if ((res.status === 401 || res.status === 403) && retry) {
+    clearGuestSession();
+    await ensureGuestSession();
+    return apiRequest(path, options, false);
+  }
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(text || `HTTP ${res.status}`);
+  }
+  if (res.status === 204) return null;
+  return res.json();
+}
+
 export async function listProjects() {
   await migrateLegacyStorage();
-  return sortIndex(loadIndex());
+  try {
+    const payload = await apiRequest("/api/projects", { method: "GET" });
+    const rows = sortIndex(payload?.projects ?? []);
+    saveIndex(rows);
+    return rows;
+  } catch {
+    return sortIndex(loadIndex());
+  }
 }
 
 export async function saveProject(project) {
   await migrateLegacyStorage();
-  await putProjectRecord(project);
-  const rows = loadIndex().filter((row) => row.id !== project.id);
-  rows.push(indexRowFor(project));
-  saveIndex(sortIndex(rows));
+  const existsRemotely = loadIndex().some((row) => row.id === project.id);
+  const method = existsRemotely ? "PATCH" : "POST";
+  const path = existsRemotely ? `/api/projects/${project.id}` : "/api/projects";
+  const body = existsRemotely
+    ? {
+        name: project.name,
+        data: project.data,
+      }
+    : {
+        client_project_id: project.id,
+        name: project.name,
+        data: project.data,
+      };
+  try {
+    const saved = await apiRequest(path, {
+      method,
+      body: JSON.stringify(body),
+    });
+    const normalized = {
+      id: saved?.id ?? project.id,
+      name: saved?.name ?? project.name,
+      created_at: saved?.created_at ?? project.created_at,
+      updated_at: saved?.updated_at ?? project.updated_at,
+      data: saved?.data ?? project.data,
+    };
+    await putProjectRecord(normalized);
+    const rows = loadIndex().filter((row) => row.id !== normalized.id);
+    rows.push(indexRowFor(normalized));
+    saveIndex(sortIndex(rows));
+
+    const eventRows = buildEventPayloads(normalized);
+    if (eventRows.length) {
+      await apiRequest(`/api/projects/${normalized.id}/events`, {
+        method: "POST",
+        body: JSON.stringify({ events: eventRows }),
+      });
+    }
+    return normalized;
+  } catch (error) {
+    await putProjectRecord(project);
+    const rows = loadIndex().filter((row) => row.id !== project.id);
+    rows.push(indexRowFor(project));
+    saveIndex(sortIndex(rows));
+    throw error;
+  }
 }
 
 export async function loadProject(projectId) {
   await migrateLegacyStorage();
-  return getProjectRecord(projectId);
+  try {
+    const project = await apiRequest(`/api/projects/${projectId}`, { method: "GET" });
+    if (project) {
+      await putProjectRecord(project);
+      const rows = loadIndex().filter((row) => row.id !== project.id);
+      rows.push(indexRowFor(project));
+      saveIndex(sortIndex(rows));
+    }
+    return project;
+  } catch {
+    return getProjectRecord(projectId);
+  }
 }
 
 export async function deleteProject(projectId) {
   await migrateLegacyStorage();
+  try {
+    await apiRequest(`/api/projects/${projectId}`, { method: "DELETE" });
+  } catch {
+    // ローカル退避だけでも削除できるようにする
+  }
   await deleteProjectRecord(projectId);
   saveIndex(loadIndex().filter((row) => row.id !== projectId));
 }
 
 export async function updateProjectName(projectId, nextName) {
   await migrateLegacyStorage();
-  const row = await getProjectRecord(projectId);
+  let row = await getProjectRecord(projectId);
   if (!row) return;
-  const now = new Date().toISOString();
-  const updated = {
-    ...row,
-    name: nextName,
-    updated_at: now,
-    data: {
-      ...(row.data ?? {}),
-      project_meta: {
-        ...(row.data?.project_meta ?? {}),
-        id: projectId,
+  try {
+    row = await apiRequest(`/api/projects/${projectId}`, {
+      method: "PATCH",
+      body: JSON.stringify({
         name: nextName,
-        created_at: row.data?.project_meta?.created_at ?? row.created_at ?? now,
-        updated_at: now,
+        data: {
+          ...(row.data ?? {}),
+          project_meta: {
+            ...(row.data?.project_meta ?? {}),
+            id: projectId,
+            name: nextName,
+          },
+        },
+      }),
+    });
+  } catch {
+    const now = new Date().toISOString();
+    row = {
+      ...row,
+      name: nextName,
+      updated_at: now,
+      data: {
+        ...(row.data ?? {}),
+        project_meta: {
+          ...(row.data?.project_meta ?? {}),
+          id: projectId,
+          name: nextName,
+          created_at: row.data?.project_meta?.created_at ?? row.created_at ?? now,
+          updated_at: now,
+        },
       },
-    },
-  };
-  await putProjectRecord(updated);
+    };
+  }
+  await putProjectRecord(row);
   const rows = loadIndex().map((item) => (
     item.id === projectId
-      ? { ...item, name: nextName, updated_at: now }
+      ? { ...item, name: row.name, updated_at: row.updated_at }
       : item
   ));
   saveIndex(sortIndex(rows));
