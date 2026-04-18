@@ -3,8 +3,8 @@
 講義メディア生成システムの monorepo です。  
 React + Vite のフロントエンドと、FastAPI + `auto_lecture` ベースのバックエンドを同じリポジトリで管理します。
 
-この README は、最終的に `main` に統合される前提の標準構成として書いています。  
-まだ `main` に統合されていない期間は、必要に応じて対応する作業ブランチを checkout して利用してください。
+現在の安定版ブランチは `main`、開発中の最新版は `feature/monorepo-backend-integration` です。  
+最終的にはこの monorepo 構成を `main` に統合する前提で、この README もその標準構成として書いています。
 
 ## このリポジトリで管理するもの
 
