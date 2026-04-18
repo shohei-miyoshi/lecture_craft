@@ -23,170 +23,85 @@ React + Vite のフロントエンドと、FastAPI + `auto_lecture` ベースの
 
 ## フォルダ構造
 
-### 全体
+代表的なファイルだけを抜粋して書いています。
 
 ```text
 lecture_craft/
-├── .gitignore
-├── Makefile
-├── README.md
-├── backend/
-│   ├── .gitignore
-│   ├── README.md
-│   ├── app/
-│   │   ├── __init__.py
-│   │   ├── admin.py
-│   │   ├── cache.py
-│   │   ├── db.py
-│   │   ├── jobs.py
-│   │   ├── main.py
-│   │   ├── models.py
-│   │   ├── persistence.py
-│   │   └── service.py
-│   ├── scripts/
-│   │   ├── pdf_to_img.py
-│   │   ├── run_all.py
-│   │   ├── run_allLD_audio_only_lecture.py
-│   │   ├── run_allLD_lecture.py
-│   │   ├── run_audio_only_lecture.py
-│   │   ├── run_lp.py
-│   │   └── tts_custom_text.py
-│   ├── src/
-│   │   └── auto_lecture/
-│   │       ├── __init__.py
-│   │       ├── add_animation_arrow_point.py
-│   │       ├── add_animation_laser_circle.py
-│   │       ├── add_animation_marker_highlight.py
-│   │       ├── add_animation_runner_from_mapping.py
-│   │       ├── animation_assignment.py
-│   │       ├── audio_only_lecture.py
-│   │       ├── audio_only_style_axes.py
-│   │       ├── config.py
-│   │       ├── deck_scan.py
-│   │       ├── gpt_client.py
-│   │       ├── gpt_utils.py
-│   │       ├── lecture_concat.py
-│   │       ├── lecture_script.py
-│   │       ├── lp_processor.py
-│   │       ├── paths.py
-│   │       ├── style_axes.py
-│   │       ├── tts_generation.py
-│   │       ├── tts_simple.py
-│   │       └── utils/
-│   │           └── pdf_utils.py
-│   ├── chars_per_slide.py
-│   ├── copy_project_sources_flat.py
-│   ├── requirements.txt
-│   ├── requirements_min.txt
-│   ├── requirements_visual_extra.txt
-│   ├── tree_anim.txt
-│   └── tree_audio.txt
-├── docs/
-│   ├── api-contract.md
-│   └── mcp-server-deploy.md
 ├── frontend/
-│   ├── .env.example
-│   ├── README.md
-│   ├── index.html
-│   ├── package-lock.json
-│   ├── package.json
 │   ├── public/
-│   │   └── favicon.svg
+│   │   └── favicon.svg                 # ブラウザ用アイコン
 │   ├── src/
-│   │   ├── App.jsx
-│   │   ├── index.css
-│   │   ├── main.jsx
 │   │   ├── components/
-│   │   │   ├── AdminDashboard.jsx
-│   │   │   ├── AiPanel.jsx
-│   │   │   ├── AudioView.jsx
-│   │   │   ├── AuthScreen.jsx
-│   │   │   ├── CenterPanel.jsx
-│   │   │   ├── ConfirmDialog.jsx
-│   │   │   ├── ConfirmModal.jsx
-│   │   │   ├── ExportPanel.jsx
-│   │   │   ├── HlBox.jsx
-│   │   │   ├── HlEditor.jsx
-│   │   │   ├── HlSummaryBar.jsx
-│   │   │   ├── LeftPanel.jsx
-│   │   │   ├── MiniSlide.jsx
-│   │   │   ├── Playbar.jsx
-│   │   │   ├── ProjectHome.jsx
-│   │   │   ├── RightPanel.jsx
-│   │   │   ├── Seg.jsx
-│   │   │   ├── SentenceCard.jsx
-│   │   │   ├── SlideCanvas.jsx
-│   │   │   └── ToastLayer.jsx
+│   │   │   ├── AdminDashboard.jsx      # 管理ダッシュボード
+│   │   │   ├── AuthScreen.jsx          # ログイン / ゲスト導線
+│   │   │   ├── ProjectHome.jsx         # プロジェクト一覧・新規作成画面
+│   │   │   ├── LeftPanel.jsx           # アップロード・生成設定
+│   │   │   ├── CenterPanel.jsx         # スライドプレビュー・再生バー
+│   │   │   ├── RightPanel.jsx          # 台本・ハイライト編集
+│   │   │   ├── SlideCanvas.jsx         # スライドプレビュー＋描画
+│   │   │   ├── SentenceCard.jsx        # 台本1文カード
+│   │   │   ├── HlEditor.jsx            # HL設定パネル
+│   │   │   ├── ExportPanel.jsx         # 書き出しパネル
+│   │   │   ├── AiPanel.jsx             # AI修正パネル
+│   │   │   ├── AudioView.jsx           # 音声モード専用ビュー
+│   │   │   └── ...                     # そのほかのUI部品
 │   │   ├── hooks/
-│   │   │   ├── useConfirm.js
-│   │   │   ├── usePlayback.js
-│   │   │   ├── useResizableLayout.js
-│   │   │   └── useToast.js
+│   │   │   ├── useConfirm.js           # カスタム確認ダイアログフック
+│   │   │   ├── usePlayback.js          # 再生タイマー
+│   │   │   ├── useResizableLayout.js   # パネル幅リサイズ
+│   │   │   └── useToast.js             # トースト通知フック
 │   │   ├── store/
-│   │   │   └── reducer.js
+│   │   │   └── reducer.js              # アプリ全状態のReducer
 │   │   └── utils/
-│   │       ├── constants.js
-│   │       ├── helpers.js
-│   │       ├── highlightPresentation.js
-│   │       ├── highlights.js
-│   │       ├── imageFrame.js
-│   │       ├── projectStore.js
-│   │       ├── research.js
-│   │       └── sessionStore.js
-│   ├── vercel.json
-│   └── vite.config.js
-└── scripts/
-    ├── check_backend.sh
-    ├── dev_backend.sh
-    ├── dev_frontend.sh
-    ├── setup_backend.sh
-    └── setup_backend_full.sh
+│   │       ├── constants.js            # 定数・API URL
+│   │       ├── projectStore.js         # プロジェクト保存
+│   │       ├── sessionStore.js         # セッション保存
+│   │       ├── research.js             # 研究ログ補助
+│   │       └── ...                     # 描画・補助ユーティリティ
+│   │   ├── App.jsx                     # アプリ全体
+│   │   ├── index.css                   # 全体スタイル
+│   │   └── main.jsx                    # エントリポイント
+│   ├── .env.example                    # フロント用環境変数例
+│   ├── README.md                       # フロント補足
+│   ├── index.html                      # HTML エントリ
+│   ├── package.json                    # npm scripts / 依存
+│   ├── vercel.json                     # Vercel 設定
+│   └── vite.config.js                  # Vite 設定
+├── backend/
+│   ├── app/
+│   │   ├── main.py                     # FastAPI エントリポイント
+│   │   ├── models.py                   # API 入出力モデル
+│   │   ├── db.py                       # DB 接続と初期化
+│   │   ├── persistence.py              # ユーザ・プロジェクト保存
+│   │   ├── jobs.py                     # 非同期生成ジョブ管理
+│   │   ├── service.py                  # generate / export 本体
+│   │   ├── admin.py                    # 管理ダッシュボード集計
+│   │   └── cache.py                    # 生成キャッシュ補助
+│   ├── src/
+│   │   └── auto_lecture/               # 講義生成パイプライン本体
+│   ├── scripts/
+│   │   ├── run_all.py                  # 動画系一括生成
+│   │   ├── run_audio_only_lecture.py   # 音声のみ生成
+│   │   ├── run_lp.py                   # LayoutParser 実行
+│   │   └── ...                         # 実験用スクリプト
+│   ├── README.md                       # バックエンド補足
+│   ├── requirements_min.txt            # API 最小依存
+│   ├── requirements_visual_extra.txt   # 動画系追加依存
+│   ├── requirements.txt                # 研究用込みの重い依存
+│   └── tree_*.txt                      # 出力構造の参考
+├── docs/
+│   ├── api-contract.md                 # API 契約
+│   └── mcp-server-deploy.md            # MCP サーバ配置メモ
+├── scripts/
+│   ├── setup_backend.sh                # backend 最小セットアップ
+│   ├── setup_backend_full.sh           # backend 動画系追加セットアップ
+│   ├── dev_backend.sh                  # backend 起動
+│   ├── dev_frontend.sh                 # frontend 起動
+│   └── check_backend.sh                # backend health check
+├── .gitignore                          # 生成物・秘密情報の除外
+├── Makefile                            # よく使うコマンドのショートカット
+└── README.md                           # monorepo 全体の入口
 ```
-
-### 役割の見取り図
-
-#### ルート
-
-- `README.md`: monorepo 全体の使い方
-- `.gitignore`: 生成物、仮想環境、秘密情報の除外
-- `Makefile`: よく使う開発コマンドのショートカット
-
-#### `frontend/`
-
-- `package.json`: npm scripts と依存関係
-- `.env.example`: frontend から backend を参照する URL の例
-- `vite.config.js`: Vite の開発サーバ設定
-- `src/components/`: UI コンポーネント
-- `src/hooks/`: UI ロジック
-- `src/store/reducer.js`: 主要 state の一元管理
-- `src/utils/`: API URL、保存、研究ログ、描画補助
-
-#### `backend/`
-
-- `app/main.py`: FastAPI エントリポイント
-- `app/db.py`: SQLite / PostgreSQL 接続と初期化
-- `app/persistence.py`: ユーザ、セッション、プロジェクト保存
-- `app/jobs.py`: 非同期生成ジョブ管理
-- `app/service.py`: generate / export 処理
-- `app/admin.py`: 管理ダッシュボード用集計
-- `app/cache.py`: 生成キャッシュ補助
-- `src/auto_lecture/`: 既存の講義生成パイプライン本体
-- `requirements_min.txt`: API 最小構成
-- `requirements_visual_extra.txt`: 動画系追加依存
-- `requirements.txt`: 研究用途込みの重い依存
-
-#### `docs/`
-
-- `api-contract.md`: API 入出力契約
-- `mcp-server-deploy.md`: MCP サーバ配置のメモ
-
-#### `scripts/`
-
-- `setup_backend.sh`: backend の最小セットアップ
-- `setup_backend_full.sh`: backend の動画系追加セットアップ
-- `dev_backend.sh`: backend 起動
-- `dev_frontend.sh`: frontend 起動
-- `check_backend.sh`: backend health check
 
 ## クローン後のセットアップ
 
