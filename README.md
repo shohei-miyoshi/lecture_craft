@@ -103,7 +103,7 @@ lecture_craft/
 └── README.md                           # monorepo 全体の入口
 ```
 
-## クローン後のセットアップ
+## 初回セットアップから起動まで
 
 ### 1. リポジトリをクローン
 
@@ -123,7 +123,7 @@ git switch feature/monorepo-backend-integration
 
 統合後はこの手順は不要になります。
 
-### 3. 前提を確認する
+### 3. 前提コマンドを確認する
 
 - `git`
 - `Node.js 18 以上` と `npm`
@@ -140,12 +140,7 @@ python3.10 --version || python3.11 --version || python3 --version
 ffmpeg -version
 ```
 
-## 最短セットアップ
-
-backend を先に起動し、その後 frontend を起動します。  
-ターミナルを 2 つ使うのが分かりやすいです。
-
-### ターミナル 1: backend
+### 4. backend を初回セットアップする
 
 ```bash
 # 以前の失敗で backend/.venv が不正な Python で作られている場合だけ削除
@@ -153,33 +148,135 @@ rm -rf backend/.venv
 
 # 最小構成のセットアップ
 bash scripts/setup_backend.sh
-
-# OpenAI を使う場合
-export OPENAI_API_KEY=YOUR_OPENAI_API_KEY
-
-# backend 起動
-bash scripts/dev_backend.sh
 ```
 
-### ターミナル 2: frontend
+`scripts/setup_backend.sh` は次を自動で行います。
+
+- `python3.10` を優先して探す
+- `backend/.venv` を作る
+- `backend/requirements_min.txt` をインストールする
+
+ここではまだ backend は起動しません。
+
+### 5. OpenAI API キーを設定する
+
+講義生成まで試すなら、backend 起動前に API キーを設定してください。  
+health check だけなら未設定でも構いません。
+
+推奨:
+
+```bash
+export OPENAI_API_KEY=YOUR_OPENAI_API_KEY
+```
+
+毎回 export したくない場合:
+
+```bash
+mkdir -p ~/.config/lecture_craft
+printf '%s\n' 'YOUR_OPENAI_API_KEY' > ~/.config/lecture_craft/apikey.txt
+```
+
+### 6. frontend の依存を初回インストールする
+
+`make frontend` は `npm install` を自動ではしてくれないので、初回だけ手動で入れます。
 
 ```bash
 cd frontend
 npm install
-cp .env.example .env
-bash ../scripts/dev_frontend.sh
+cd ..
 ```
 
-### 起動確認
+### 7. frontend の環境変数を用意する
+
+backend を `http://localhost:8000` で起動するなら必須ではありませんが、初回は作っておくと分かりやすいです。
+
+```bash
+cd frontend
+cp .env.example .env
+cd ..
+```
+
+`frontend/.env.example` の中身は次です。
+
+```bash
+VITE_API_URL=http://localhost:8000
+```
+
+### 8. backend を起動する
+
+ここからはターミナルを 2 つ使います。
+
+ターミナル 1:
+
+```bash
+make backend
+```
+
+これは `bash scripts/dev_backend.sh` を呼び、`uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload` で backend を起動します。  
+このコマンドは常駐するので、ターミナルはそのまま開いたままにしてください。
+
+### 9. frontend を起動する
+
+ターミナル 2:
+
+```bash
+make frontend
+```
+
+これは `frontend/` に移動して `npm run dev` を実行します。  
+こちらも常駐するので、ターミナルは開いたままにしてください。
+
+### 10. backend の起動確認をする
+
+ターミナル 3 か、空いている別ターミナルで次を実行します。
 
 ```bash
 bash scripts/check_backend.sh
 ```
 
+または:
+
+```bash
+make check-backend
+```
+
+成功すれば `http://127.0.0.1:8000/api/health` の JSON が返ります。
+
+### 11. ブラウザで frontend を開く
+
 期待する URL:
 
 - backend: `http://127.0.0.1:8000`
 - frontend: `http://localhost:5173`
+
+ブラウザで `http://localhost:5173` を開いて、次が見えれば起動できています。
+
+- ログインまたはゲスト利用の導線
+- `Studio / Admin` の切り替え
+- project home から新規作成や既存プロジェクト選択の UI
+
+### 12. 初回セットアップ後、次回から何を実行すればよいか
+
+2 回目以降は、依存追加が無ければ毎回 `npm install` や `setup_backend.sh` は不要です。  
+通常は次だけで大丈夫です。
+
+ターミナル 1:
+
+```bash
+make backend
+```
+
+ターミナル 2:
+
+```bash
+make frontend
+```
+
+必要なら:
+
+```bash
+make check-backend
+```
 
 ## backend セットアップ詳細
 
@@ -293,6 +390,18 @@ make backend
 make frontend
 make check-backend
 ```
+
+意味は次のとおりです。
+
+- `make backend-setup`: backend の初回セットアップ
+- `make backend`: backend 起動
+- `make frontend`: frontend 起動
+- `make check-backend`: backend health check
+
+注意:
+
+- `make frontend` は初回の `npm install` までは行いません
+- `make backend` と `make frontend` はどちらも常駐するので、別ターミナルで実行する必要があります
 
 ## API の見取り図
 
