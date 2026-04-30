@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import re
 import shutil
@@ -44,6 +45,7 @@ from auto_lecture.utils.pdf_utils import pdf_to_images
 MATERIAL_ROOT = PROJECT_ROOT / "teachingmaterial"
 PDF_ROOT = MATERIAL_ROOT / "pdf"
 IMG_ROOT = MATERIAL_ROOT / "img"
+PREVIEW_TTS_CACHE_ROOT = PROJECT_ROOT / "outputs" / "preview_tts_cache"
 
 LEVEL_MAP = {"intro": "L1", "basic": "L2", "advanced": "L3"}
 DETAIL_MAP = {"summary": "D1", "standard": "D2", "detail": "D3"}
@@ -149,7 +151,20 @@ def generate_media(
             report(90, "生成結果を整形しています")
             response = build_visual_generate_response(paths, req.mode, req.detail, req.difficulty)
 
+        try:
+            preview_audio_path = ensure_generated_preview_audio(paths)
+        except Exception:
+            preview_audio_path = None
+
         response = attach_generation_ref(response, plan, cache_hit=False)
+        generation_ref = dict(response.get("generation_ref") or {})
+        generation_ref.update(
+            {
+                "preview_audio_signature": build_preview_audio_signature(response.get("sentences", [])),
+                "preview_audio_source_ready": preview_audio_path is not None,
+            }
+        )
+        response["generation_ref"] = generation_ref
         write_cached_generate_response(plan, response)
         write_api_meta(
             paths,
@@ -184,27 +199,52 @@ def export_media(req: ExportRequest) -> FileResponse:
 
 
 def export_audio(req: ExportRequest) -> Path:
+    bundle = synthesize_audio_export_bundle(req, export_prefix="api_export_audio")
+    return bundle["audio_path"]
+
+
+def render_preview_audio(req: ExportRequest) -> Dict[str, Any]:
+    bundle = synthesize_audio_export_bundle(req, export_prefix="api_preview_audio")
+    return {
+        "ok": True,
+        "output_root_name": bundle["output_root_name"],
+        "material_name": bundle["material_name"],
+        "audio_filename": bundle["audio_path"].name,
+        "sentences": bundle["sentences"],
+        "total_duration": round(bundle["total_duration"], 3),
+        "preview_audio_signature": build_preview_audio_signature(bundle["sentences"]),
+    }
+
+
+def synthesize_audio_export_bundle(req: ExportRequest, *, export_prefix: str) -> Dict[str, Any]:
     if not req.sentences:
         raise ApiError(400, "INVALID_REQUEST", "sentences is required for audio export")
 
-    export_key = f"api_export_audio_{timestamp_slug()}_{short_id()}"
+    export_key = f"{export_prefix}_{timestamp_slug()}_{short_id()}"
+    material_name = f"{export_key}.pdf"
+    output_root_name = f"api_exports/{export_key}"
     paths = build_paths(
-        teaching_material_file_name=f"{export_key}.pdf",
+        teaching_material_file_name=material_name,
         material_root=MATERIAL_ROOT,
-        output_root_name=f"api_exports/{export_key}",
+        output_root_name=output_root_name,
     )
 
     ordered = sorted(
         req.sentences,
-        key=lambda sentence: (float(sentence.get("start_sec", 0) or 0), str(sentence.get("id", ""))),
+        key=sentence_sort_key,
     )
     client = create_client()
-    part_dir = Path(paths.tts_output_dir) / "_parts_audio_export"
-    part_dir.mkdir(parents=True, exist_ok=True)
-    part_paths = synthesize_sentence_audio_files(client, ordered, part_dir)
+    part_paths = resolve_cached_sentence_audio_files(client, ordered)
+    timed_sentences, total_duration = build_audio_timeline_from_parts(ordered, part_paths)
     out_path = Path(paths.tts_output_dir) / "lecture_audio.mp3"
     concat_mp3_with_ffmpeg(part_paths, out_path)
-    return out_path
+    return {
+        "audio_path": out_path,
+        "sentences": timed_sentences,
+        "total_duration": total_duration,
+        "material_name": material_name,
+        "output_root_name": output_root_name,
+    }
 
 
 def export_video(req: ExportRequest, include_highlights: bool) -> Path:
@@ -507,16 +547,86 @@ def synthesize_sentence_audio_files(
         if not text:
             raise ApiError(400, "INVALID_REQUEST", "sentence text must not be empty")
         out_path = out_dir / f"part{idx:02d}.mp3"
-        with client.audio.speech.with_streaming_response.create(
-            model=auto_config.API_TTS_MODEL,
-            voice=auto_config.API_TTS_VOICE,
-            input=text,
-            response_format="mp3",
-            speed=auto_config.API_TTS_VOICE_SPEED,
-        ) as response:
-            response.stream_to_file(out_path)
+        synthesize_sentence_audio_to_path(client, text, out_path)
         part_paths.append(out_path)
     return part_paths
+
+
+def build_sentence_audio_cache_key(text: str) -> str:
+    payload = json.dumps(
+        {
+            "v": "preview_tts_cache_v1",
+            "model": auto_config.API_TTS_MODEL,
+            "voice": auto_config.API_TTS_VOICE,
+            "speed": auto_config.API_TTS_VOICE_SPEED,
+            "text": normalize_for_tts(text),
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def synthesize_sentence_audio_to_path(client: Any, text: str, out_path: Path) -> None:
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    with client.audio.speech.with_streaming_response.create(
+        model=auto_config.API_TTS_MODEL,
+        voice=auto_config.API_TTS_VOICE,
+        input=text,
+        response_format="mp3",
+        speed=auto_config.API_TTS_VOICE_SPEED,
+    ) as response:
+        response.stream_to_file(out_path)
+
+
+def resolve_cached_sentence_audio_files(
+    client: Any,
+    sentences: Sequence[Dict[str, Any]],
+) -> List[Path]:
+    PREVIEW_TTS_CACHE_ROOT.mkdir(parents=True, exist_ok=True)
+    part_paths: List[Path] = []
+    for sentence in sentences:
+        text = normalize_for_tts(str(sentence.get("text", "")).strip())
+        if not text:
+            raise ApiError(400, "INVALID_REQUEST", "sentence text must not be empty")
+        cache_key = build_sentence_audio_cache_key(text)
+        cache_path = PREVIEW_TTS_CACHE_ROOT / f"{cache_key}.mp3"
+        if not cache_path.exists():
+            tmp_path = PREVIEW_TTS_CACHE_ROOT / f"{cache_key}.tmp.mp3"
+            with get_named_lock(f"preview-tts:{cache_key}"):
+                if not cache_path.exists():
+                    synthesize_sentence_audio_to_path(client, text, tmp_path)
+                    tmp_path.replace(cache_path)
+            try:
+                tmp_path.unlink(missing_ok=True)  # type: ignore[arg-type]
+            except Exception:
+                pass
+        part_paths.append(cache_path)
+    return part_paths
+
+
+def build_audio_timeline_from_parts(
+    sentences: Sequence[Dict[str, Any]],
+    part_paths: Sequence[Path],
+) -> Tuple[List[Dict[str, Any]], float]:
+    timed_rows: List[Dict[str, Any]] = []
+    current_t = 0.0
+
+    for sentence, part_path in zip(sentences, part_paths):
+        duration = probe_media_duration(part_path) or 0.0
+        duration = max(0.05, float(duration))
+        timed_rows.append(
+            {
+                "id": str(sentence.get("id", "")),
+                "slide_idx": int(sentence.get("slide_idx", 0) or 0),
+                "text": str(sentence.get("text", "")).strip(),
+                "start_sec": round(current_t, 3),
+                "end_sec": round(current_t + duration, 3),
+            }
+        )
+        current_t += duration
+
+    return timed_rows, current_t
 
 
 def ensure_pdf_upload(material_name: str, pdf_bytes: bytes) -> Path:
@@ -541,6 +651,61 @@ def ensure_audio_tts(script_path: Path, paths: ProjectPaths) -> Path:
         return out_path
     tts_from_textfile(text_file=script_path, paths=paths, mode="audio", fmt="mp3")
     return out_path
+
+
+def build_preview_audio_signature(sentences: Sequence[Dict[str, Any]]) -> str:
+    rows = []
+    for sentence in sorted(sentences or [], key=sentence_sort_key):
+        rows.append(
+            [
+                str(sentence.get("id", "")),
+                str(sentence.get("text", "")).strip(),
+            ]
+        )
+    return json.dumps(rows, ensure_ascii=False, separators=(",", ":"))
+
+
+def collect_generated_audio_parts(paths: ProjectPaths) -> List[Path]:
+    tts_root = Path(paths.tts_output_dir)
+    if not tts_root.exists():
+        return []
+    return sorted(tts_root.glob("page*/part*.mp3"))
+
+
+def ensure_generated_preview_audio(paths: ProjectPaths) -> Optional[Path]:
+    direct_path = find_first_file(
+        Path(paths.tts_output_dir),
+        ("lecture_audio.mp3", "lecture_detailed.mp3", "lecture_standard.mp3", "lecture_summary.mp3"),
+    )
+    if direct_path is not None and direct_path.exists():
+        return direct_path
+
+    preview_path = Path(paths.tts_output_dir) / "preview_source_audio.mp3"
+    if preview_path.exists():
+        return preview_path
+
+    part_paths = collect_generated_audio_parts(paths)
+    if not part_paths:
+        return None
+    concat_mp3_with_ffmpeg(part_paths, preview_path)
+    return preview_path
+
+
+def export_preview_audio_source(output_root_name: str, material_name: str) -> FileResponse:
+    paths = build_paths(
+        teaching_material_file_name=material_name,
+        material_root=MATERIAL_ROOT,
+        output_root_name=output_root_name,
+    )
+    outputs_root = (PROJECT_ROOT / "outputs").resolve()
+    resolved_output_dir = Path(paths.output_dir).resolve()
+    if resolved_output_dir != outputs_root and outputs_root not in resolved_output_dir.parents:
+        raise ApiError(400, "INVALID_REQUEST", "output_root_name is invalid")
+
+    audio_path = ensure_generated_preview_audio(paths)
+    if audio_path is None or not audio_path.exists():
+        raise ApiError(404, "PREVIEW_AUDIO_NOT_FOUND", "preview audio source not found")
+    return FileResponse(audio_path, media_type="audio/mpeg", filename="preview_audio.mp3")
 
 
 def lp_outputs_ready(paths: ProjectPaths) -> bool:

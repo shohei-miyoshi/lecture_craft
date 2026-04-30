@@ -3,6 +3,7 @@ import SlideCanvas from "./SlideCanvas.jsx";
 import AudioView   from "./AudioView.jsx";
 import Playbar     from "./Playbar.jsx";
 import { usePlayback } from "../hooks/usePlayback.js";
+import { usePreviewAudio } from "../hooks/usePreviewAudio.js";
 
 /**
  * 中央パネル
@@ -10,14 +11,37 @@ import { usePlayback } from "../hooks/usePlayback.js";
  * - タブ（エディタ/書き出し）は右パネル側に移動したため、ここでは持たない
  */
 export default function CenterPanel({ state, dispatch, addToast, requestConfirm }) {
-  usePlayback(state, dispatch);
+  const {
+    audioRef,
+    togglePlayback,
+    previewAudio,
+    previewAudioReady,
+    previewAudioStale,
+    beginPreviewScrub,
+    seekPreview,
+    endPreviewScrub,
+  } = usePreviewAudio(state, dispatch, addToast);
+  usePlayback(state, dispatch, {
+    enabled: !state.generated || !state.sents.length || (!previewAudioReady && previewAudio.status !== "loading"),
+  });
   const [helpOpen, setHelpOpen] = useState(false);
 
   const isAudio = state.appMode === "audio";
   const isHl    = state.appMode === "hl";
+  const showPreviewAudioBadge = state.generated && state.sents.length > 0;
+  const previewAudioBadge = previewAudio.status === "loading"
+    ? { label: "音声準備中", color: "var(--am)", background: "rgba(232,169,75,.12)", border: "rgba(232,169,75,.3)" }
+    : previewAudioStale
+      ? { label: "音声更新待ち", color: "var(--rd)", background: "rgba(224,91,91,.12)", border: "rgba(224,91,91,.28)" }
+      : previewAudioReady
+        ? { label: "音声同期済み", color: "var(--gr)", background: "rgba(86,190,126,.12)", border: "rgba(86,190,126,.28)" }
+        : previewAudio.status === "error"
+          ? { label: "音声エラー", color: "var(--rd)", background: "rgba(224,91,91,.12)", border: "rgba(224,91,91,.28)" }
+          : { label: "音声未準備", color: "var(--tm)", background: "rgba(255,255,255,.04)", border: "rgba(255,255,255,.08)" };
 
   return (
     <main style={{ flex: 1, display: "flex", flexDirection: "column", background: "transparent", minWidth: 0, overflow: "hidden", position: "relative" }}>
+      <audio ref={audioRef} preload="auto" style={{ display: "none" }} />
 
       {/* ── ツールバー ── */}
       <div
@@ -42,6 +66,24 @@ export default function CenterPanel({ state, dispatch, addToast, requestConfirm 
         ) : (
           <span style={{ fontFamily: "var(--fm)", fontSize: 9, color: "var(--tm)", marginLeft: 4, padding: "4px 8px", background: "rgba(255,255,255,.03)" }}>
             {state.slides.length ? `${state.curSl + 1} / ${state.slides.length}` : "— / —"}
+          </span>
+        )}
+
+        {showPreviewAudioBadge && (
+          <span
+            title={previewAudio.error || "プレビュー音声の状態"}
+            style={{
+              fontFamily: "var(--fm)",
+              fontSize: 9,
+              color: previewAudioBadge.color,
+              marginLeft: 2,
+              padding: "4px 8px",
+              background: previewAudioBadge.background,
+              border: `1px solid ${previewAudioBadge.border}`,
+              borderRadius: 999,
+            }}
+          >
+            {previewAudioBadge.label}
           </span>
         )}
 
@@ -116,7 +158,16 @@ export default function CenterPanel({ state, dispatch, addToast, requestConfirm 
       )}
 
       {/* ── 再生バー ── */}
-      <Playbar state={state} dispatch={dispatch} hideSlideNav={isAudio} />
+      <Playbar
+        state={state}
+        dispatch={dispatch}
+        hideSlideNav={isAudio}
+        onTogglePlay={togglePlayback}
+        playbackBusy={previewAudio.status === "loading"}
+        onSeekStart={beginPreviewScrub}
+        onSeekPreview={seekPreview}
+        onSeekEnd={endPreviewScrub}
+      />
 
       {helpOpen && (
         <div

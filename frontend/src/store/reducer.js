@@ -37,6 +37,7 @@ export const INITIAL_STATE = {
   statusMsg: "待機中",
   progress:  0,
   showProg:  false,
+  activeJobId: null,
 
   // 描画モード
   drawMode:    false,
@@ -199,6 +200,7 @@ function snapshotHistoryState(state) {
     statusMsg: state.statusMsg,
     progress: state.progress,
     showProg: state.showProg,
+    activeJobId: state.activeJobId,
     drawMode: state.drawMode,
     drawSentId: state.drawSentId,
     curT: state.curT,
@@ -256,7 +258,7 @@ export function reducer(state, action) {
       // ロードされたデータに mode が含まれていれば appMode も上書き
       const appMode = action.d.mode ?? state.appMode;
       const previewFrame = savedSettings?.preview_frame ?? derivePreviewFrame(action.d.slides ?? []);
-      const savedFingerprint = JSON.stringify({
+      const loadedProjectFingerprint = JSON.stringify({
         slides: action.d.slides ?? [],
         sentences: action.d.sentences ?? [],
         highlights: action.d.highlights ?? [],
@@ -278,10 +280,20 @@ export function reducer(state, action) {
           created_at: action.d.project_meta?.created_at ?? null,
         },
       });
+      const savedFingerprint = action.d.saved_fingerprint
+        ?? (action.d.project_meta?.id ? loadedProjectFingerprint : null);
       const prevMode = savedSettings?.prev_mode
         ?? (appMode === "audio" ? "audio" : appMode === "video" ? "plain" : "hl");
       const baseline = buildBaseline(action.d, appMode);
       const sessionId = makeSessionId();
+      const hasGeneratedPayload = (action.d.slides ?? []).length > 0 || sents.length > 0 || normalizedHighlights.length > 0;
+      const loadedStatus = action.d.active_job_id
+        ? "proc"
+        : (action.d.status ?? (hasGeneratedPayload ? "done" : "idle"));
+      const loadedStatusMsg = action.d.active_job_id
+        ? (action.d.status_message ?? "生成ジョブを再接続中...")
+        : (action.d.status_message ?? (hasGeneratedPayload ? "生成完了" : "待機中"));
+      const loadedProgress = Number(action.d.progress ?? (action.d.active_job_id ? 10 : (hasGeneratedPayload ? 100 : 0))) || 0;
       return {
         ...state,
         slides:    action.d.slides ?? [],
@@ -291,7 +303,7 @@ export function reducer(state, action) {
         genRef:    action.d.generation_ref ?? null,
         appMode,
         curSl:     0,
-        generated: true,
+        generated: hasGeneratedPayload,
         selSent:   null,
         selHl:     null,
         curT:      0,
@@ -305,6 +317,11 @@ export function reducer(state, action) {
         projectMeta: action.d.project_meta ?? state.projectMeta ?? null,
         previewFrame,
         savedFingerprint,
+        status: loadedStatus,
+        statusMsg: loadedStatusMsg,
+        progress: loadedProgress,
+        showProg: Boolean(action.d.active_job_id),
+        activeJobId: action.d.active_job_id ?? null,
         historyPast: [],
         historyFuture: [],
         opLogs:    appendLog(
@@ -709,6 +726,40 @@ export function reducer(state, action) {
               }),
             )
           : state.studyEvents,
+      };
+    }
+
+    case "SYNC_SENT_TIMINGS": {
+      const timingMap = new Map((action.sentences ?? []).map((sentence) => [String(sentence.id), sentence]));
+      let changed = false;
+      const nextSentences = state.sents.map((sentence) => {
+        const synced = timingMap.get(String(sentence.id));
+        if (!synced) return sentence;
+        if (sentence.start_sec !== synced.start_sec || sentence.end_sec !== synced.end_sec) {
+          changed = true;
+        }
+        return {
+          ...sentence,
+          start_sec: synced.start_sec,
+          end_sec: synced.end_sec,
+        };
+      });
+      const nextTotDur = Number(action.total_duration ?? 0) > 0
+        ? Number(action.total_duration)
+        : (nextSentences.length ? Math.max(...nextSentences.map((sentence) => sentence.end_sec ?? 0)) : state.totDur);
+      if (!changed && Math.abs(nextTotDur - state.totDur) < 0.001) {
+        return state;
+      }
+      return {
+        ...state,
+        sents: nextSentences,
+        totDur: nextTotDur,
+        curT: Math.min(state.curT, nextTotDur),
+        opLogs: appendLog(
+          state.opLogs,
+          `プレビュー音声の尺に合わせてタイムラインを同期しました（duration=${nextTotDur.toFixed(3)}s）`,
+          { type: "preview_timeline_sync", total_duration: nextTotDur, sentence_count: timingMap.size },
+        ),
       };
     }
 

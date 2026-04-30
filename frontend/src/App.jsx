@@ -1,4 +1,4 @@
-import { useState, useEffect, useReducer } from "react";
+import { useState, useEffect, useReducer, useRef } from "react";
 import "./index.css";
 
 import { reducer, INITIAL_STATE } from "./store/reducer.js";
@@ -15,8 +15,18 @@ import ExportPanel   from "./components/ExportPanel.jsx";
 import AdminDashboard from "./components/AdminDashboard.jsx";
 import ProjectHome from "./components/ProjectHome.jsx";
 import AuthScreen from "./components/AuthScreen.jsx";
-import { buildProjectPayload, fingerprintProjectState, saveProject } from "./utils/projectStore.js";
+import { buildProjectPayload, fingerprintProjectData, fingerprintProjectState, saveProject } from "./utils/projectStore.js";
 import { fetchCurrentSession, logoutUser } from "./utils/sessionStore.js";
+import { API_URL } from "./utils/constants.js";
+import {
+  buildWorkspaceDraftDataWithMeta,
+  clearWorkspaceDraft,
+  fingerprintWorkspaceData,
+  hasPersistableWorkspace,
+  isHydratableWorkspaceDraft,
+  loadWorkspaceDraft,
+  saveWorkspaceDraft,
+} from "./utils/workspaceStore.js";
 
 function parseRouteFromHash(hashValue) {
   if (hashValue === "#admin") {
@@ -26,6 +36,13 @@ function parseRouteFromHash(hashValue) {
     return { view: "studio", studioScreen: "editor" };
   }
   return { view: "studio", studioScreen: "home" };
+}
+
+function createWorkspaceScopeId() {
+  if (globalThis.crypto?.randomUUID) {
+    return `workspace_${globalThis.crypto.randomUUID()}`;
+  }
+  return `workspace_${Date.now()}_${Math.random().toString(16).slice(2)}`;
 }
 
 /** リサイズハンドル（縦線） */
@@ -58,26 +75,109 @@ export default function App() {
   const [studioScreen, setStudioScreen] = useState(initialRoute.studioScreen);
   const [authReady, setAuthReady] = useState(false);
   const [authSession, setAuthSession] = useState(null);
+  const [workspaceReady, setWorkspaceReady] = useState(false);
+  const [workspaceScopeId, setWorkspaceScopeId] = useState(() => createWorkspaceScopeId());
   const { toasts, addToast }      = useToast();
   const { confirmProps, requestConfirm, requestPrompt } = useConfirm();
   const { layout, startResizeLeft, startResizeRight, resizingLeft, resizingRight, resetLayout } = useResizableLayout();
-  const isDirty = state.generated && (!state.savedFingerprint || fingerprintProjectState(state, state.projectMeta?.name) !== state.savedFingerprint);
-  const currentWorkspace =
-    state.generated || state.status === "proc" || Boolean(pdfFile) || Boolean(state.projectMeta?.name)
-      ? {
-          name: state.projectMeta?.name ?? pdfFile?.name?.replace(/\.pdf$/i, "") ?? "編集中のプロジェクト",
-          data: {
-            slides: state.slides,
-            sentences: state.sents,
-            highlights: state.hls,
-            mode: state.appMode,
-            status: state.status,
-            status_message: state.statusMsg,
-            pdf_name: pdfFile?.name ?? null,
-          },
-        }
-      : null;
+  const workspaceHydratingRef = useRef(false);
+  const workspaceAutosaveTimerRef = useRef(null);
+  const lastWorkspaceFingerprintRef = useRef(null);
+  const workspaceSaveSeqRef = useRef(0);
+  const workspaceMutationEpochRef = useRef(0);
+  const workspaceRevisionRef = useRef(0);
+  const workspaceScopeIdRef = useRef(workspaceScopeId);
+  const latestStateRef = useRef(state);
+  const latestPdfFileRef = useRef(pdfFile);
+  const isDirty = hasPersistableWorkspace(state)
+    && (!state.savedFingerprint || fingerprintProjectState(state, state.projectMeta?.name) !== state.savedFingerprint);
+  const currentWorkspaceData = (hasPersistableWorkspace(state) || Boolean(pdfFile))
+    ? buildWorkspaceDraftDataWithMeta(state, pdfFile, {
+        scopeId: workspaceScopeId,
+        revision: workspaceRevisionRef.current,
+      })
+    : null;
+  const currentWorkspace = currentWorkspaceData
+    ? {
+        name: state.projectMeta?.name ?? pdfFile?.name?.replace(/\.pdf$/i, "") ?? "編集中のプロジェクト",
+        data: currentWorkspaceData,
+      }
+    : null;
   const isAdmin = authSession?.user?.role === "admin";
+  const workspaceDraftFingerprint = hasPersistableWorkspace(state)
+    ? fingerprintWorkspaceData(
+        buildWorkspaceDraftDataWithMeta(state, pdfFile, {
+          scopeId: workspaceScopeId,
+          revision: 0,
+        }),
+      )
+    : null;
+
+  const issueWorkspaceRevision = () => {
+    workspaceRevisionRef.current += 1;
+    return workspaceRevisionRef.current;
+  };
+
+  const rotateWorkspaceScope = () => {
+    const nextScopeId = createWorkspaceScopeId();
+    workspaceScopeIdRef.current = nextScopeId;
+    setWorkspaceScopeId(nextScopeId);
+    return nextScopeId;
+  };
+
+  const fingerprintCurrentWorkspace = (nextState = latestStateRef.current, nextPdfFile = latestPdfFileRef.current) => {
+    if (!hasPersistableWorkspace(nextState)) return null;
+    return fingerprintWorkspaceData(
+      buildWorkspaceDraftDataWithMeta(nextState, nextPdfFile, {
+        scopeId: workspaceScopeIdRef.current,
+        revision: 0,
+      }),
+    );
+  };
+
+  const dropWorkspaceDraft = async ({ rotateScope = true } = {}) => {
+    workspaceMutationEpochRef.current += 1;
+    workspaceSaveSeqRef.current += 1;
+    if (workspaceAutosaveTimerRef.current) {
+      window.clearTimeout(workspaceAutosaveTimerRef.current);
+      workspaceAutosaveTimerRef.current = null;
+    }
+    lastWorkspaceFingerprintRef.current = null;
+    const scopeId = workspaceScopeIdRef.current;
+    const revision = issueWorkspaceRevision();
+    if (rotateScope) {
+      rotateWorkspaceScope();
+    }
+    if (!authSession?.user?.id) return;
+    try {
+      await clearWorkspaceDraft({ scopeId, revision });
+    } catch (error) {
+      console.warn("Failed to clear workspace draft:", error);
+    }
+  };
+
+  const fingerprintProjectSnapshot = (sourceState, name, projectMeta = sourceState.projectMeta ?? null) => {
+    const payload = buildProjectPayload(
+      {
+        ...sourceState,
+        projectMeta,
+      },
+      name,
+    );
+    return fingerprintProjectData(payload.data);
+  };
+
+  useEffect(() => {
+    latestStateRef.current = state;
+  }, [state]);
+
+  useEffect(() => {
+    latestPdfFileRef.current = pdfFile;
+  }, [pdfFile]);
+
+  useEffect(() => {
+    workspaceScopeIdRef.current = workspaceScopeId;
+  }, [workspaceScopeId]);
 
   useEffect(() => {
     let active = true;
@@ -96,6 +196,101 @@ export default function App() {
       active = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (!authReady) return;
+    if (!authSession?.user?.id) {
+      if (workspaceAutosaveTimerRef.current) {
+        window.clearTimeout(workspaceAutosaveTimerRef.current);
+        workspaceAutosaveTimerRef.current = null;
+      }
+      workspaceHydratingRef.current = false;
+      lastWorkspaceFingerprintRef.current = null;
+      workspaceMutationEpochRef.current += 1;
+      workspaceSaveSeqRef.current += 1;
+      workspaceRevisionRef.current = 0;
+      rotateWorkspaceScope();
+      setWorkspaceReady(false);
+      return;
+    }
+    if (hasPersistableWorkspace(state)) {
+      setWorkspaceReady(true);
+      return;
+    }
+
+    let active = true;
+    workspaceHydratingRef.current = true;
+    loadWorkspaceDraft()
+      .then((draft) => {
+        if (!active) return;
+        const restoredScopeId = draft?.workspace_id ?? draft?.data?.workspace_meta?.scope_id ?? createWorkspaceScopeId();
+        workspaceScopeIdRef.current = restoredScopeId;
+        setWorkspaceScopeId(restoredScopeId);
+        workspaceRevisionRef.current = Number(draft?.revision ?? draft?.data?.workspace_meta?.revision ?? 0) || 0;
+        if (draft?.data && isHydratableWorkspaceDraft(draft.data)) {
+          dispatch({ type: "LOAD", d: draft.data });
+          lastWorkspaceFingerprintRef.current = fingerprintWorkspaceData(draft.data);
+        } else {
+          lastWorkspaceFingerprintRef.current = null;
+        }
+        setWorkspaceReady(true);
+      })
+      .catch((error) => {
+        console.warn("Failed to restore workspace draft:", error);
+        if (active) setWorkspaceReady(true);
+      })
+      .finally(() => {
+        if (!active) return;
+        workspaceHydratingRef.current = false;
+      });
+
+    return () => {
+      active = false;
+      workspaceHydratingRef.current = false;
+    };
+  }, [authReady, authSession?.user?.id]);
+
+  useEffect(() => {
+    if (workspaceAutosaveTimerRef.current) {
+      window.clearTimeout(workspaceAutosaveTimerRef.current);
+      workspaceAutosaveTimerRef.current = null;
+    }
+    if (!authSession?.user?.id || !workspaceReady || workspaceHydratingRef.current) return;
+    if (!workspaceDraftFingerprint || workspaceDraftFingerprint === lastWorkspaceFingerprintRef.current) return;
+    const mutationEpoch = workspaceMutationEpochRef.current;
+
+    workspaceAutosaveTimerRef.current = window.setTimeout(() => {
+      if (workspaceMutationEpochRef.current !== mutationEpoch) return;
+      const draftState = latestStateRef.current;
+      const draftPdfFile = latestPdfFileRef.current;
+      const fingerprint = fingerprintCurrentWorkspace(draftState, draftPdfFile);
+      if (!fingerprint) return;
+      if (fingerprint === lastWorkspaceFingerprintRef.current) return;
+      const revision = issueWorkspaceRevision();
+      const draftData = buildWorkspaceDraftDataWithMeta(draftState, draftPdfFile, {
+        scopeId: workspaceScopeIdRef.current,
+        revision,
+      });
+      const saveSeq = ++workspaceSaveSeqRef.current;
+      saveWorkspaceDraft(draftData)
+        .then(() => {
+          if (workspaceMutationEpochRef.current !== mutationEpoch) return;
+          if (workspaceSaveSeqRef.current !== saveSeq) return;
+          if (fingerprintCurrentWorkspace() !== fingerprint) return;
+          lastWorkspaceFingerprintRef.current = fingerprint;
+        })
+        .catch((error) => {
+          console.warn("Failed to save workspace draft:", error);
+        });
+    }, 450);
+
+    return () => {
+      if (workspaceAutosaveTimerRef.current) {
+        window.clearTimeout(workspaceAutosaveTimerRef.current);
+        workspaceAutosaveTimerRef.current = null;
+      }
+    };
+  }, [authSession?.user?.id, workspaceDraftFingerprint, workspaceReady, pdfFile]);
 
   const setStudioRoute = (nextScreen, historyMode = "push") => {
     const nextHash = nextScreen === "editor" ? "#editor" : "";
@@ -118,14 +313,24 @@ export default function App() {
   };
 
   const persistProject = async (forcedName = null) => {
-    const name = forcedName ?? state.projectMeta?.name ?? pdfFile?.name?.replace(/\.pdf$/i, "") ?? "新しいプロジェクト";
-    const payload = buildProjectPayload(state, name);
+    const snapshotState = latestStateRef.current;
+    const snapshotPdfFile = latestPdfFileRef.current;
+    const name = forcedName ?? snapshotState.projectMeta?.name ?? snapshotPdfFile?.name?.replace(/\.pdf$/i, "") ?? "新しいプロジェクト";
+    const payload = buildProjectPayload(snapshotState, name);
     try {
       const saved = await saveProject(payload);
-      const nextMeta = saved?.data?.project_meta ?? payload.data.project_meta;
+      const nextMeta = saved?.project_meta ?? saved?.data?.project_meta ?? payload.data.project_meta;
+      const submittedFingerprint = fingerprintProjectSnapshot(snapshotState, nextMeta?.name ?? name, nextMeta);
       dispatch({ type: "SET", k: "projectMeta", v: nextMeta });
-      dispatch({ type: "SET", k: "savedFingerprint", v: fingerprintProjectState(state, nextMeta?.name ?? name) });
-      addToast("ok", `プロジェクト「${name}」を保存しました`);
+      const currentFingerprint = hasPersistableWorkspace(latestStateRef.current)
+        ? fingerprintProjectSnapshot(latestStateRef.current, nextMeta?.name ?? name, nextMeta)
+        : null;
+      if (currentFingerprint === submittedFingerprint) {
+        dispatch({ type: "SET", k: "savedFingerprint", v: submittedFingerprint });
+        addToast("ok", `プロジェクト「${name}」を保存しました`);
+      } else {
+        addToast("in", `プロジェクト「${name}」を保存しました。新しい未保存の変更があります`);
+      }
       return saved ?? payload;
     } catch (error) {
       console.warn("Project save failed:", error);
@@ -162,30 +367,92 @@ export default function App() {
     });
   };
 
-  const confirmDirtyAction = (proceed, actionLabel) => {
-    if (!isDirty) {
+  const requestCancelJob = async (jobId, { silent = false } = {}) => {
+    if (!jobId) return false;
+    try {
+      const res = await fetch(`${API_URL}/api/jobs/${jobId}/cancel`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!silent) addToast("in", "生成停止をリクエストしました");
+      return true;
+    } catch (error) {
+      if (!silent) {
+        addToast("er", error.message || "生成停止に失敗しました");
+      }
+      return false;
+    }
+  };
+
+  const cancelActiveGeneration = async ({ silent = false } = {}) => {
+    const jobId = latestStateRef.current.activeJobId;
+    if (!jobId) return false;
+    return requestCancelJob(jobId, { silent });
+  };
+
+  const confirmWorkspaceAction = (proceed, actionLabel) => {
+    const hasRunningGeneration = Boolean(state.activeJobId);
+    if (!isDirty && !hasRunningGeneration) {
       proceed();
       return;
     }
+    if (isDirty) {
+      requestConfirm({
+        title: hasRunningGeneration ? "未保存の変更と生成中のジョブがあります" : "未保存の変更があります",
+        message: `未保存の編集があります。\n${actionLabel}前に保存しますか？${hasRunningGeneration ? "\n続行すると現在の生成は停止されます。" : ""}`,
+        confirmLabel: "保存して続行",
+        secondaryLabel: "保存せず続行",
+        onSecondary: proceed,
+        onConfirm: () => saveCurrentProject(proceed),
+      });
+      return;
+    }
     requestConfirm({
-      title: "未保存の変更があります",
-      message: `未保存の編集があります。\n${actionLabel}前に保存しますか？`,
-      confirmLabel: "保存して続行",
-      secondaryLabel: "保存せず続行",
-      onSecondary: proceed,
-      onConfirm: () => saveCurrentProject(proceed),
+      title: "生成中のジョブがあります",
+      message: `${actionLabel}すると現在の生成を停止します。続行しますか？`,
+      confirmLabel: "続行する",
+      onConfirm: proceed,
     });
+  };
+
+  const replaceWorkspace = async ({ nextData = null, nextPdfFile = null, nextScreen = "home", toast = null } = {}) => {
+    await cancelActiveGeneration({ silent: true });
+    await dropWorkspaceDraft();
+    if (nextData) {
+      dispatch({ type: "LOAD", d: nextData });
+      setPdfFile(nextPdfFile);
+      setTab("editor");
+      setStudioRoute("editor");
+    } else {
+      dispatch({ type: "RESET" });
+      setPdfFile(nextPdfFile);
+      setTab("editor");
+      setStudioRoute(nextScreen);
+    }
+    if (toast) {
+      addToast("ok", toast);
+    }
+  };
+
+  const handleProjectDeleted = async (project) => {
+    if (project?.id && project.id === latestStateRef.current.projectMeta?.id) {
+      await replaceWorkspace({ nextScreen: "home" });
+    }
+    addToast("ok", `プロジェクト「${project?.name ?? "名称未設定"}」を削除しました`);
   };
 
   // ── リセット確認 ──
   const handleReset = () => {
-    if (!state.generated) {
+    const hasWorkspaceState = hasPersistableWorkspace(state) || Boolean(pdfFile) || Boolean(state.activeJobId);
+    if (!hasWorkspaceState) {
+      void dropWorkspaceDraft();
       dispatch({ type: "RESET" });
       setPdfFile(null);
       setStudioRoute("home");
       return;
     }
-    confirmDirtyAction(() => {
+    confirmWorkspaceAction(() => {
       requestConfirm({
         title:        "リセット",
         message:      "現在の講義データをすべて削除します。\n保存が必要な場合は「書き出し」からJSONをエクスポートしてください。",
@@ -194,34 +461,42 @@ export default function App() {
         confirmBg:    "var(--amd)",
         confirmBorder:"rgba(232,169,75,.35)",
         onConfirm: () => {
-          dispatch({ type: "RESET" });
-          setPdfFile(null);
-          setStudioRoute("home");
+          replaceWorkspace({ nextScreen: "home" }).catch((error) => {
+            console.warn("Workspace reset failed:", error);
+            addToast("er", "リセットに失敗しました");
+          });
         },
       });
     }, "リセット");
   };
 
   const handleCreateProject = (nextPdfFile = null) => {
-    confirmDirtyAction(() => {
-      dispatch({ type: "RESET" });
-      setPdfFile(nextPdfFile);
-      setTab("editor");
-      setStudioRoute("editor");
-      if (nextPdfFile) {
-        addToast("in", `📑 ${nextPdfFile.name}`);
-      }
+    confirmWorkspaceAction(() => {
+      replaceWorkspace({ nextPdfFile, nextScreen: "editor" })
+        .then(() => {
+          if (nextPdfFile) {
+            addToast("in", `📑 ${nextPdfFile.name}`);
+          }
+        })
+        .catch((error) => {
+          console.warn("Failed to create project workspace:", error);
+          addToast("er", "新規プロジェクトの準備に失敗しました");
+        });
     }, "新規作成");
   };
 
   const handleOpenProject = (project) => {
     if (!project?.data) return;
-    confirmDirtyAction(() => {
-      dispatch({ type: "LOAD", d: project.data });
-      setPdfFile(null);
-      setTab("editor");
-      setStudioRoute("editor");
-      addToast("ok", `プロジェクト「${project.name}」を読み込みました`);
+    confirmWorkspaceAction(() => {
+      replaceWorkspace({
+        nextData: project.data,
+        nextPdfFile: null,
+        nextScreen: "editor",
+        toast: `プロジェクト「${project.name}」を読み込みました`,
+      }).catch((error) => {
+        console.warn("Failed to open project:", error);
+        addToast("er", "プロジェクトの読み込みに失敗しました");
+      });
     }, "別のプロジェクトを開く");
   };
 
@@ -347,6 +622,8 @@ export default function App() {
 
   const handleLogout = () => {
     const run = async () => {
+      await cancelActiveGeneration({ silent: true });
+      await dropWorkspaceDraft();
       await logoutUser();
       setAuthSession(null);
       setView("studio");
@@ -355,15 +632,23 @@ export default function App() {
       setPdfFile(null);
       addToast("ok", "ログアウトしました");
     };
-    if (!isDirty) {
-      run();
+    if (!isDirty && !state.activeJobId) {
+      run().catch((error) => {
+        console.warn("Logout failed:", error);
+        addToast("er", "ログアウトに失敗しました");
+      });
       return;
     }
     requestConfirm({
       title: "ログアウト",
-      message: "未保存の変更があります。保存せずにログアウトしますか？",
+      message: `${isDirty ? "未保存の変更があります。" : ""}${state.activeJobId ? "\n現在の生成ジョブは停止されます。" : ""}\n保存せずにログアウトしますか？`,
       confirmLabel: "ログアウトする",
-      onConfirm: run,
+      onConfirm: () => {
+        run().catch((error) => {
+          console.warn("Logout failed:", error);
+          addToast("er", "ログアウトに失敗しました");
+        });
+      },
     });
   };
 
@@ -506,6 +791,7 @@ export default function App() {
           onOpenProject={handleOpenProject}
           onResumeEditing={() => setStudioRoute("editor")}
           currentProject={currentWorkspace}
+          onProjectDeleted={handleProjectDeleted}
           requestConfirm={requestConfirm}
           requestPrompt={requestPrompt}
           addToast={addToast}
@@ -541,6 +827,7 @@ export default function App() {
             handleReset={handleReset}
             saveProjectNow={saveCurrentProject}
             isDirty={isDirty}
+            workspaceScopeId={workspaceScopeId}
           />
         </div>
 

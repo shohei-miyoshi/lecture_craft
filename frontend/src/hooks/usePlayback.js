@@ -6,8 +6,9 @@ import { useEffect, useRef } from "react";
  * seekSignal が変化したとき（シーク操作）に
  * 基準時刻をリセットすることで、再生中シークに対応する。
  */
-export function usePlayback(state, dispatch) {
+export function usePlayback(state, dispatch, options = {}) {
   const { playing, curT, totDur, playSpeed, sents, curSl } = state;
+  const { enabled = true } = options;
 
   // Ref経由で最新値を参照（stale closure 回避）
   const refs = useRef({ playing, curT, totDur, playSpeed, sents, curSl });
@@ -16,7 +17,7 @@ export function usePlayback(state, dispatch) {
   });
 
   useEffect(() => {
-    if (!playing) return;
+    if (!enabled || !playing) return;
 
     // 再生開始 or シーク後の基準を記録
     const startWall = Date.now();
@@ -51,5 +52,5 @@ export function usePlayback(state, dispatch) {
     return () => cancelAnimationFrame(id);
 
   // playing が変わるたびに再起動（シーク後に playing=true のまま seekSignal 変化させることで再起動）
-  }, [playing, state.seekSignal]);  // seekSignal はシーク時にインクリメントするカウンタ
+  }, [enabled, playing, state.seekSignal]);  // seekSignal はシーク時にインクリメントするカウンタ
 }

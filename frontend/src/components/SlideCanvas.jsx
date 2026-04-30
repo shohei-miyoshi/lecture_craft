@@ -37,6 +37,7 @@ export default function SlideCanvas({ state, dispatch, addToast, requestConfirm 
   const curHls = state.hls.filter((h) => h.slide_idx === state.curSl);
   const actSent = state.sents.find((s) => s.start_sec <= state.curT && state.curT < s.end_sec);
   const showBB = state.appMode === "hl";
+  const showPreviewOverlay = state.prevMode === "hl";
   const previewFrame = state.previewFrame ?? { width: 1600, height: 900, aspect_ratio: 16 / 9 };
   const imageSize = {
     width: Number(previewFrame.width ?? slide?.width ?? 1600) || 1600,
@@ -95,6 +96,7 @@ export default function SlideCanvas({ state, dispatch, addToast, requestConfirm 
     () => getContainRect(stageSize.width, stageSize.height, imageSize.width, imageSize.height),
     [imageSize.height, imageSize.width, stageSize.height, stageSize.width],
   );
+  const renderScale = imageSize.width > 0 ? imageFrame.width / imageSize.width : 1;
 
   useEffect(() => {
     setPan((prev) => clampPan(prev, zoom, baseSize));
@@ -336,17 +338,30 @@ export default function SlideCanvas({ state, dispatch, addToast, requestConfirm 
         )}
 
         {showBB && imageReady && curHls.map((hl) => (
-          <HlBox
-            key={hl.id}
-            hl={hl}
-            slideHighlights={curHls}
-            isSel={hl.id === state.selHl}
-            isActive={!!(actSent && (hl.sentence_ids ?? []).includes(actSent.id))}
-            isPlaying={state.playing}
-            frame={imageFrame}
-            dispatch={dispatch}
-            requestConfirm={requestConfirm}
-          />
+          (() => {
+            const isActive = Boolean(actSent && (hl.sentence_ids ?? []).includes(actSent.id));
+            const activeElapsedSec = isActive ? Math.max(0, state.curT - (actSent?.start_sec ?? 0)) : 0;
+            const activeSentenceDurationSec = isActive
+              ? Math.max(0, (actSent?.end_sec ?? 0) - (actSent?.start_sec ?? 0))
+              : 0;
+            return (
+              <HlBox
+                key={hl.id}
+                hl={hl}
+                slideHighlights={curHls}
+                isSel={hl.id === state.selHl}
+                isActive={isActive}
+                isPlaying={state.playing}
+                showPreviewOverlay={showPreviewOverlay}
+                frame={imageFrame}
+                dispatch={dispatch}
+                requestConfirm={requestConfirm}
+                renderScale={renderScale}
+                activeElapsedSec={activeElapsedSec}
+                activeSentenceDurationSec={activeSentenceDurationSec}
+              />
+            );
+          })()
         ))}
 
         {ghost && ghost.w > 0 && (

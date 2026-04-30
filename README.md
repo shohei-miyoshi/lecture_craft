@@ -293,8 +293,12 @@ make check-backend
 bash scripts/setup_backend_full.sh
 ```
 
-このスクリプトは `backend/requirements_visual_extra.txt` を追加で入れます。  
+このスクリプトは `backend/requirements_visual_extra.txt` の追加依存を入れ、
+`backend/models/config.yml` と `backend/models/model_final.pth` も取得します。  
 `video` / `video_highlight` まで `backend/.venv` だけで完結して試したいときに使います。
+
+macOS では、PyTorch 2.1 系と新しい Apple Clang / libc++ の組み合わせで
+`detectron2` ビルドが失敗しやすいため、スクリプト内で互換パッチを自動適用します。
 
 ### 既存の `../auto_lecture/.venv` を使う場合
 
@@ -332,6 +336,20 @@ backend は次の順でキーを見に行く前提です。
 - 本番想定: `DATABASE_URL` を設定して PostgreSQL に切り替え
 
 起動時に `backend/app/db.py` が DB を初期化し、必要なテーブルを作成します。
+
+保存済みプロジェクトだけでなく、編集中ワークスペースの autosave draft も backend 側 DB に保存されます。
+そのため、同じ DB を見ている限りは次が成立します。
+
+- ブラウザをリロードしても編集中状態を復元できる
+- backend を再起動しても編集中状態を復元できる
+- 同じ PC 上のローカル開発では `backend/data/lecture_craft_app.db` が残っていれば状態を引き継げる
+
+逆に、本番や MCP サーバ環境でファイルシステムが使い捨ての場合は、
+SQLite ファイルも消えるので draft は残りません。
+本番では次のどちらかを前提にしてください。
+
+- `DATABASE_URL` を永続 PostgreSQL に向ける
+- もしくは SQLite ファイルを置く volume を永続化する
 
 ### backend で主に増えるもの
 
@@ -372,7 +390,8 @@ VITE_API_URL=http://localhost:8000
 - `frontend/src/main.jsx`: React のエントリポイント
 - `frontend/src/index.css`: 全体スタイル
 - `frontend/src/store/reducer.js`: 主要 state
-- `frontend/src/utils/projectStore.js`: プロジェクト保存
+- `frontend/src/utils/projectStore.js`: 保存済みプロジェクトの backend 保存
+- `frontend/src/utils/workspaceStore.js`: 編集中ワークスペースの autosave / 復元
 - `frontend/src/utils/sessionStore.js`: セッション保存
 - `frontend/src/utils/research.js`: 研究ログ関係
 - `frontend/src/components/ProjectHome.jsx`: プロジェクトホーム
@@ -423,9 +442,14 @@ make check-backend
 - `POST /api/projects/{project_id}/layout-review`: レイアウトレビュー保存
 - `POST /api/projects/{project_id}/script-review`: 台本レビュー保存
 - `GET /api/projects/{project_id}/review-state`: レビュー状態取得
+- `GET /api/workspace`: 編集中ワークスペースの復元
+- `PUT /api/workspace`: 編集中ワークスペースの autosave
+- `DELETE /api/workspace`: 編集中ワークスペースの破棄
 - `POST /api/generate`: 非同期講義生成開始
 - `GET /api/jobs/{job_id}`: 生成ジョブ進捗取得
 - `POST /api/jobs/{job_id}/cancel`: 生成ジョブ停止
+- `POST /api/preview-audio/render`: 編集後プレビュー音声の再生成
+- `GET /api/preview-audio/source`: 生成済み音声の preview 接続
 - `GET /api/admin/overview`: 管理ダッシュボード集計
 - `GET /api/admin/review-settings`: レビュー設定取得
 - `PATCH /api/admin/review-settings`: レビュー設定更新
@@ -466,9 +490,17 @@ curl -fsS http://127.0.0.1:8000/api/health
 ## 管理画面と認証
 
 - 保存済みプロジェクトは backend 側でユーザ単位に保存されます
+- 編集中ワークスペースの autosave も backend 側でユーザ単位に保存されます
 - 最初に登録されたアカウントは管理者になります
 - 管理者は `GET /api/admin/overview` と `PATCH /api/admin/review-settings` を利用できます
 - frontend では `Studio / Admin` 切り替えで管理画面に入れます
+
+### プレビュー音声の扱い
+
+- 生成直後で台本が未編集なら、backend にある生成済み音声をそのまま preview に接続します
+- 台本を編集したあとだけ、preview 用音声を backend で再構成します
+- 再構成時は文単位の TTS cache を使い、同じ文面の音声は再利用します
+- つまり、毎回すべての文を最初から TTS し直すわけではありません
 
 ## 詰まりやすい点
 
@@ -480,6 +512,10 @@ curl -fsS http://127.0.0.1:8000/api/health
   health check は通っても生成時に失敗します。
 - frontend から backend に接続できない  
   `frontend/.env` の `VITE_API_URL` と backend の URL を確認してください。
+- 管理画面で `Failed to fetch` と出る  
+  まず `make backend` が起動しているか確認してください。backend に届いていて未認証なら `401/403` になり、届いていないときだけ `Failed to fetch` になります。
+- schema 追加後に保存や管理画面の挙動が変  
+  backend を再起動してください。`backend/app/db.py` の初期化で列追加や新テーブル作成が走ります。
 - `npm run lint` に失敗する  
   `frontend/package.json` に script はありますが、依存導入状況は別途確認してください。まずは `npm run dev` と `npm run build` を優先してください。
 

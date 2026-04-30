@@ -24,6 +24,14 @@ function timeText(value) {
   }
 }
 
+function formatDashboardError(err) {
+  const raw = String(err?.message || err || "failed");
+  if (raw === "Failed to fetch") {
+    return "バックエンドに接続できませんでした。`make backend` が起動中か確認してください。";
+  }
+  return raw;
+}
+
 function MetricCard({ title, value, hint, accent, tone, suffix = "" }) {
   return (
     <div style={cardStyle(accent)}>
@@ -163,7 +171,7 @@ export default function AdminDashboard({ addToast }) {
 
   const load = async ({ silent = false } = {}) => {
     if (!silent) setLoading(true);
-    setError("");
+    if (!silent) setError("");
     try {
       const [overviewRes, settingsRes] = await Promise.all([
         authFetch(`/api/admin/overview?limit=12`, { method: "GET" }),
@@ -176,8 +184,12 @@ export default function AdminDashboard({ addToast }) {
       setReviewSettings(settings);
       setLayoutMode(settings?.global?.layout_review_mode ?? "off");
       setScriptMode(settings?.global?.script_review_mode ?? "off");
+      setError("");
     } catch (err) {
-      setError(err.message || "failed");
+      const message = formatDashboardError(err);
+      if (!silent || !data) {
+        setError(message);
+      }
       if (!silent) addToast?.("er", "管理ダッシュボードの取得に失敗しました");
     } finally {
       if (!silent) setLoading(false);

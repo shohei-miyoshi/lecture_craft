@@ -58,6 +58,12 @@ class ResearchSessionRequest(BaseModel):
     settings: Dict[str, Any] = Field(default_factory=dict)
 
 
+class WorkspaceDraftRequest(BaseModel):
+    workspace_id: Optional[str] = None
+    revision: Optional[int] = None
+    data: Dict[str, Any] = Field(default_factory=dict)
+
+
 class ProjectUpsertRequest(BaseModel):
     client_project_id: Optional[str] = None
     name: str

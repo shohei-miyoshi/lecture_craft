@@ -31,13 +31,22 @@ _LP_MODEL_LOCK = threading.Lock()
 
 
 @lru_cache(maxsize=2)
-def _build_lp_model_cached(model_path_str: str):
+def _build_lp_model_cached(config_path_str: str, model_path_str: str):
+    config_path = Path(config_path_str)
     model_path = Path(model_path_str)
+    if not config_path.exists():
+        raise FileNotFoundError(
+            f"LayoutParser config not found: {config_path}. "
+            "Run: bash scripts/setup_backend_full.sh"
+        )
     if not model_path.exists():
-        raise FileNotFoundError(f"LayoutParser model not found: {model_path}")
+        raise FileNotFoundError(
+            f"LayoutParser model not found: {model_path}. "
+            "Run: bash scripts/setup_backend_full.sh"
+        )
 
     return lp.Detectron2LayoutModel(
-        config_path="lp://PubLayNet/faster_rcnn_R_50_FPN_3x/config",
+        config_path=str(config_path),
         model_path=str(model_path),
         label_map={0: "Text", 1: "Title", 2: "List", 3: "Table", 4: "Figure"},
         extra_config=[
@@ -50,9 +59,10 @@ def _build_lp_model_cached(model_path_str: str):
 
 
 def build_lp_model(project_root: Path):
+    config_path = (project_root / "models" / "config.yml").resolve()
     model_path = (project_root / "models" / "model_final.pth").resolve()
     with _LP_MODEL_LOCK:
-        return _build_lp_model_cached(str(model_path))
+        return _build_lp_model_cached(str(config_path), str(model_path))
 
 
 # ----------------------------------------------------------------------

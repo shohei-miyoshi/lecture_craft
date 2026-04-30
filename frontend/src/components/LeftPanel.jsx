@@ -1,7 +1,7 @@
-import { useState, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import Seg from "./Seg.jsx";
 import { DETAIL_LABELS, DIFF_LABELS, DETAIL_VALS, DIFF_VALS, API_URL } from "../utils/constants.js";
-import { toB64, makeDemo } from "../utils/helpers.js";
+import { toB64 } from "../utils/helpers.js";
 
 const JOB_POLL_MS = 2000;
 
@@ -12,12 +12,129 @@ function buildGenerateRequestToken() {
   return `ui_${Date.now()}_${Math.random().toString(16).slice(2)}`;
 }
 
-export default function LeftPanel({ state, dispatch, pdfFile, setPdfFile, addToast, requestConfirm, handleReset, saveProjectNow, isDirty }) {
+function wait(ms) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+export default function LeftPanel({
+  state,
+  dispatch,
+  pdfFile,
+  setPdfFile,
+  addToast,
+  requestConfirm,
+  handleReset,
+  saveProjectNow,
+  isDirty,
+  workspaceScopeId,
+}) {
   const [drag, setDrag] = useState(false);
-  const [currentJobId, setCurrentJobId] = useState(null);
-  const fileInputRef = useRef(null); // リセット後のリセット用
+  const pollRunRef = useRef(0);
+  const pollingJobIdRef = useRef(null);
+  const scopeRef = useRef(workspaceScopeId);
+
+  useEffect(() => {
+    scopeRef.current = workspaceScopeId;
+    pollRunRef.current += 1;
+    pollingJobIdRef.current = null;
+  }, [workspaceScopeId]);
+
+  useEffect(() => () => {
+    pollRunRef.current += 1;
+    pollingJobIdRef.current = null;
+  }, []);
+
+  const generationLocked = state.status === "proc";
+  const modeLocked = state.generated || generationLocked;
+
+  const isRunActive = (runId, scopeId) => (
+    pollRunRef.current === runId && scopeRef.current === scopeId
+  );
+
+  const applyRunningJobState = (job) => {
+    dispatch({ type: "SET", k: "status", v: "proc" });
+    dispatch({ type: "SET", k: "statusMsg", v: job.message || "バックエンドで生成中..." });
+    dispatch({ type: "SET", k: "showProg", v: true });
+    dispatch({ type: "SET", k: "progress", v: Math.max(10, Number(job.progress ?? 10)) });
+    dispatch({ type: "SET", k: "activeJobId", v: job.job_id });
+  };
+
+  const closeJobState = (status, message, progress = 0) => {
+    dispatch({ type: "SET", k: "status", v: status });
+    dispatch({ type: "SET", k: "statusMsg", v: message });
+    dispatch({ type: "SET", k: "progress", v: progress });
+    dispatch({ type: "SET", k: "showProg", v: false });
+    dispatch({ type: "SET", k: "activeJobId", v: null });
+  };
+
+  const monitorJob = async (jobId, { initialJob = null, runId, scopeId, mode } = {}) => {
+    let job = initialJob;
+    try {
+      while (true) {
+        if (!isRunActive(runId, scopeId)) return;
+        if (!job) {
+          const pollRes = await fetch(`${API_URL}/api/jobs/${jobId}`);
+          if (!pollRes.ok) throw new Error(`HTTP ${pollRes.status}`);
+          job = await pollRes.json();
+        }
+        if (job.status !== "queued" && job.status !== "running") break;
+        applyRunningJobState(job);
+        await wait(JOB_POLL_MS);
+        if (!isRunActive(runId, scopeId)) return;
+        const pollRes = await fetch(`${API_URL}/api/jobs/${jobId}`);
+        if (!pollRes.ok) throw new Error(`HTTP ${pollRes.status}`);
+        job = await pollRes.json();
+      }
+
+      if (!isRunActive(runId, scopeId)) return;
+
+      if (job.status === "cancelled") {
+        closeJobState("stop", job.message || "生成を停止しました", Number(job.progress ?? 0));
+        dispatch({
+          type: "APP_LOG",
+          message: `生成を停止しました（job_id=${job.job_id}）`,
+          meta: { type: "generate_cancelled", job_id: job.job_id, mode },
+        });
+        addToast("in", "生成を停止しました");
+        return;
+      }
+
+      if (job.status !== "completed" || !job.result) {
+        throw new Error(job.error?.message || "生成ジョブが失敗しました");
+      }
+
+      dispatch({ type: "LOAD", d: { ...job.result, active_job_id: null } });
+      dispatch({
+        type: "APP_LOG",
+        message: `生成が完了しました（backend, mode=${mode}, job_id=${job.job_id}, cache_hit=${job.cache_hit}）`,
+        meta: { type: "generate_success", source: "backend", mode, job_id: job.job_id, cache_hit: job.cache_hit },
+      });
+      addToast("ok", "✅ 講義メディアを生成しました");
+    } catch (err) {
+      if (!isRunActive(runId, scopeId)) return;
+      const rawMessage = err?.message || "生成に失敗しました";
+      const message = rawMessage === "HTTP 404"
+        ? "生成ジョブが見つかりません。バックエンド再起動で中断された可能性があります。"
+        : rawMessage;
+      closeJobState("err", message, 0);
+      dispatch({
+        type: "APP_LOG",
+        message: `生成に失敗しました（reason=${message}）`,
+        meta: { type: "generate_error", reason: message, mode },
+      });
+      addToast("er", message);
+    } finally {
+      if (pollRunRef.current === runId) {
+        pollingJobIdRef.current = null;
+      }
+    }
+  };
 
   const handleFile = (f) => {
+    if (generationLocked) {
+      addToast("in", "生成中は PDF を変更できません");
+      return;
+    }
     if (!f || f.type !== "application/pdf") return;
     setPdfFile(f);
     dispatch({ type: "APP_LOG", message: `PDFを選択しました（file=${f.name}, size=${f.size}bytes）`, meta: { type: "pdf_select", filename: f.name, size: f.size } });
@@ -25,8 +142,11 @@ export default function LeftPanel({ state, dispatch, pdfFile, setPdfFile, addToa
   };
 
   const startGen = async () => {
-    if (state.status === "proc") return;
+    if (generationLocked || state.activeJobId || pollingJobIdRef.current) return;
     if (!pdfFile) { addToast("er", "PDFをアップロードしてください"); return; }
+    const scopeId = scopeRef.current;
+    const runId = ++pollRunRef.current;
+    const mode = state.appMode;
     dispatch({
       type: "APP_LOG",
       message: `生成を開始しました（file=${pdfFile.name}, detail=${DETAIL_VALS[state.detail]}, difficulty=${DIFF_VALS[state.level]}, mode=${state.appMode}）`,
@@ -38,6 +158,7 @@ export default function LeftPanel({ state, dispatch, pdfFile, setPdfFile, addToa
     dispatch({ type: "SET", k: "progress",  v: 10               });
     try {
       const b64 = await toB64(pdfFile);
+      if (!isRunActive(runId, scopeId)) return;
       dispatch({ type: "SET", k: "progress",  v: 20        });
       dispatch({ type: "SET", k: "statusMsg", v: "生成ジョブを登録中..." });
       const res = await fetch(`${API_URL}/api/generate`, {
@@ -53,89 +174,37 @@ export default function LeftPanel({ state, dispatch, pdfFile, setPdfFile, addToa
         }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      let job = await res.json();
-      setCurrentJobId(job.job_id);
+      const job = await res.json();
+      if (!isRunActive(runId, scopeId)) {
+        return;
+      }
+      pollingJobIdRef.current = job.job_id;
+      dispatch({ type: "SET", k: "activeJobId", v: job.job_id });
       dispatch({
         type: "APP_LOG",
         message: `生成ジョブを受け付けました（job_id=${job.job_id}, status=${job.status}）`,
         meta: { type: "generate_job_accepted", job_id: job.job_id, status: job.status },
       });
-
-      while (job.status === "queued" || job.status === "running") {
-        dispatch({ type: "SET", k: "progress", v: Math.max(20, Number(job.progress ?? 20)) });
-        dispatch({ type: "SET", k: "statusMsg", v: job.message || "バックエンドで生成中..." });
-        await new Promise((resolve) => setTimeout(resolve, JOB_POLL_MS));
-        const pollRes = await fetch(`${API_URL}/api/jobs/${job.job_id}`);
-        if (!pollRes.ok) throw new Error(`HTTP ${pollRes.status}`);
-        job = await pollRes.json();
-      }
-
-      if (job.status === "cancelled") {
-        dispatch({ type: "SET", k: "status", v: "stop" });
-        dispatch({ type: "SET", k: "statusMsg", v: job.message || "生成を停止しました" });
-        dispatch({ type: "SET", k: "showProg", v: false });
-        dispatch({
-          type: "APP_LOG",
-          message: `生成を停止しました（job_id=${job.job_id}）`,
-          meta: { type: "generate_cancelled", job_id: job.job_id, mode: state.appMode },
-        });
-        addToast("in", "生成を停止しました");
-        setCurrentJobId(null);
-        return;
-      }
-
-      if (job.status !== "completed" || !job.result) {
-        throw new Error(job.error?.message || "生成ジョブが失敗しました");
-      }
-
-      dispatch({ type: "SET",  k: "progress",  v: 92             });
-      dispatch({ type: "SET",  k: "statusMsg", v: "データを読み込み中..." });
-      dispatch({ type: "LOAD", d: job.result });
-      dispatch({ type: "SET",  k: "progress",  v: 100   });
-      dispatch({ type: "SET",  k: "status",    v: "done" });
-      dispatch({ type: "SET",  k: "statusMsg", v: "生成完了" });
+      await monitorJob(job.job_id, { initialJob: job, runId, scopeId, mode });
+    } catch (err) {
+      if (!isRunActive(runId, scopeId)) return;
+      const message = err?.message || "生成に失敗しました";
+      closeJobState("err", message, 0);
       dispatch({
         type: "APP_LOG",
-        message: `生成が完了しました（backend, mode=${state.appMode}, job_id=${job.job_id}, cache_hit=${job.cache_hit}）`,
-        meta: { type: "generate_success", source: "backend", mode: state.appMode, job_id: job.job_id, cache_hit: job.cache_hit },
+        message: `生成に失敗しました（reason=${message}）`,
+        meta: { type: "generate_error", reason: message, mode },
       });
-      setCurrentJobId(null);
-      addToast("ok", "✅ 講義メディアを生成しました");
-    } catch (err) {
-      console.warn("Backend generate failed:", err.message);
-      const backendUnavailable = /Failed to fetch|HTTP 404|HTTP 500|HTTP 502|HTTP 503/.test(String(err.message));
-      if (backendUnavailable) {
-        dispatch({ type: "SET", k: "progress",  v: 60            });
-        dispatch({ type: "SET", k: "statusMsg", v: "デモデータを準備中..." });
-        await new Promise((r) => setTimeout(r, 300));
-        dispatch({ type: "LOAD", d: { ...makeDemo(), mode: state.appMode } });
-        dispatch({ type: "SET", k: "progress",  v: 100              });
-        dispatch({ type: "SET", k: "status",    v: "done"            });
-        dispatch({ type: "SET", k: "statusMsg", v: "生成完了（デモ）" });
-        dispatch({
-          type: "APP_LOG",
-          message: `バックエンド接続に失敗したためデモデータを読み込みました（reason=${err.message}）`,
-          meta: { type: "generate_fallback_demo", reason: err.message, mode: state.appMode },
-        });
-        setCurrentJobId(null);
-        addToast("in", "🔧 バックエンド未接続 — デモデータで表示");
-      } else {
-        dispatch({ type: "SET", k: "status", v: "err" });
-        dispatch({ type: "SET", k: "statusMsg", v: err.message || "生成に失敗しました" });
-        dispatch({
-          type: "APP_LOG",
-          message: `生成に失敗しました（reason=${err.message ?? "unknown"}）`,
-          meta: { type: "generate_error", reason: err.message ?? "unknown", mode: state.appMode },
-        });
-        setCurrentJobId(null);
-        addToast("er", err.message || "生成に失敗しました");
+      addToast("er", message);
+    } finally {
+      if (pollRunRef.current === runId) {
+        pollingJobIdRef.current = null;
       }
     }
-    setTimeout(() => dispatch({ type: "SET", k: "showProg", v: false }), 800);
   };
 
   const stopGeneration = () => {
-    if (!currentJobId || state.status !== "proc") return;
+    if (!state.activeJobId || state.status !== "proc") return;
     requestConfirm({
       title: "生成を停止",
       message: "現在の生成ジョブを停止しますか？\n停止すると途中までの結果は破棄され、あとで設定を変えて再生成できます。",
@@ -145,7 +214,7 @@ export default function LeftPanel({ state, dispatch, pdfFile, setPdfFile, addToa
       confirmBorder: "rgba(232,169,75,.35)",
       onConfirm: async () => {
         try {
-          const res = await fetch(`${API_URL}/api/jobs/${currentJobId}/cancel`, {
+          const res = await fetch(`${API_URL}/api/jobs/${state.activeJobId}/cancel`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
           });
@@ -153,8 +222,8 @@ export default function LeftPanel({ state, dispatch, pdfFile, setPdfFile, addToa
           dispatch({ type: "SET", k: "statusMsg", v: "生成停止をリクエストしました..." });
           dispatch({
             type: "APP_LOG",
-            message: `生成停止をリクエストしました（job_id=${currentJobId}）`,
-            meta: { type: "generate_cancel_requested", job_id: currentJobId, mode: state.appMode },
+            message: `生成停止をリクエストしました（job_id=${state.activeJobId}）`,
+            meta: { type: "generate_cancel_requested", job_id: state.activeJobId, mode: state.appMode },
           });
           addToast("in", "生成停止をリクエストしました");
         } catch (err) {
@@ -163,6 +232,15 @@ export default function LeftPanel({ state, dispatch, pdfFile, setPdfFile, addToa
       },
     });
   };
+
+  useEffect(() => {
+    if (!state.activeJobId || state.status !== "proc") return;
+    if (pollingJobIdRef.current === state.activeJobId) return;
+    const runId = ++pollRunRef.current;
+    const scopeId = scopeRef.current;
+    pollingJobIdRef.current = state.activeJobId;
+    void monitorJob(state.activeJobId, { runId, scopeId, mode: state.appMode });
+  }, [state.activeJobId, state.status, state.appMode]);
 
   const handleSaveProject = () => {
     saveProjectNow?.();
@@ -175,8 +253,6 @@ export default function LeftPanel({ state, dispatch, pdfFile, setPdfFile, addToa
     stop: { background: "rgba(255,255,255,.04)", border: "1px solid rgba(255,255,255,.1)", color: "var(--ts)" },
     err:  { background: "var(--rdd)", border: "1px solid rgba(224,91,91,.28)",   color: "var(--rd)" },
   }[state.status];
-
-  const modeLocked = state.generated;
 
   return (
     <aside style={{ background: "var(--sur)", borderRight: "1px solid var(--bd)", display: "flex", flexDirection: "column", overflow: "hidden", flexShrink: 0, minHeight: 0, height: "100%", width: "100%" }}>
@@ -251,8 +327,9 @@ export default function LeftPanel({ state, dispatch, pdfFile, setPdfFile, addToa
             key={pdfFile ? "has-file" : "no-file"}
             type="file"
             accept=".pdf"
+            disabled={generationLocked}
             onChange={(e) => handleFile(e.target.files[0])}
-            style={{ position: "absolute", inset: 0, opacity: 0, cursor: "pointer" }}
+            style={{ position: "absolute", inset: 0, opacity: 0, cursor: generationLocked ? "not-allowed" : "pointer" }}
           />
           {pdfFile && (
             <div style={{ position: "absolute", top: 8, right: 8, padding: "2px 8px", borderRadius: 999, background: "var(--gd)", border: "1px solid rgba(76,175,130,.32)", color: "var(--gr)", fontSize: 9, fontWeight: 700 }}>
@@ -279,7 +356,18 @@ export default function LeftPanel({ state, dispatch, pdfFile, setPdfFile, addToa
               <div style={{ fontSize: 9, color: "rgba(228,230,239,.72)", marginBottom: 2 }}>現在選択中の PDF</div>
               <div style={{ fontFamily: "var(--fm)", fontSize: 10, color: "var(--tp)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pdfFile.name}</div>
             </div>
-            <button onClick={() => setPdfFile(null)} style={{ padding: "3px 7px", border: "1px solid var(--bd2)", borderRadius: "var(--r)", background: "rgba(19,21,26,.68)", color: "var(--tp)", fontSize: 10 }}>変更</button>
+            <button
+              onClick={() => {
+                if (generationLocked) {
+                  addToast("in", "生成中は PDF を変更できません");
+                  return;
+                }
+                setPdfFile(null);
+              }}
+              style={{ padding: "3px 7px", border: "1px solid var(--bd2)", borderRadius: "var(--r)", background: "rgba(19,21,26,.68)", color: "var(--tp)", fontSize: 10 }}
+            >
+              変更
+            </button>
           </div>
         )}
 
@@ -289,7 +377,7 @@ export default function LeftPanel({ state, dispatch, pdfFile, setPdfFile, addToa
           <div style={{ fontFamily: "var(--ff)", fontSize: 9, fontWeight: 700, letterSpacing: "1.8px", textTransform: "uppercase", color: "var(--tm)" }}>学習者要求</div>
           {modeLocked && (
             <span style={{ fontSize: 9, color: "var(--am)", background: "var(--amd)", border: "1px solid rgba(232,169,75,.3)", padding: "1px 7px", borderRadius: 10 }}>
-              🔒 生成済み
+              {generationLocked ? "⏳ 生成中" : "🔒 生成済み"}
             </span>
           )}
         </div>
@@ -305,7 +393,14 @@ export default function LeftPanel({ state, dispatch, pdfFile, setPdfFile, addToa
                 {fullLabels[state[key]]}
               </span>
             </div>
-            <Seg opts={shortLabels.map((l, i) => ({ v: i, l }))} val={state[key]} onChange={(v) => dispatch({ type: "SET", k: key, v })} />
+            <Seg
+              opts={shortLabels.map((l, i) => ({ v: i, l }))}
+              val={state[key]}
+              onChange={(v) => {
+                if (generationLocked) return;
+                dispatch({ type: "SET", k: key, v });
+              }}
+            />
           </div>
         ))}
 
@@ -327,7 +422,10 @@ export default function LeftPanel({ state, dispatch, pdfFile, setPdfFile, addToa
             <Seg
               opts={[{ v: "audio", l: "音声" }, { v: "video", l: "動画" }, { v: "hl", l: "HL動画" }]}
               val={state.appMode}
-              onChange={(v) => dispatch({ type: "SET", k: "appMode", v })}
+              onChange={(v) => {
+                if (generationLocked) return;
+                dispatch({ type: "SET", k: "appMode", v });
+              }}
             />
           )}
         </div>

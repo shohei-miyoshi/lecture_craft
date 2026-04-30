@@ -12,7 +12,16 @@ const SPEEDS = [0.5, 1.0, 1.5, 2.0];
  *   - 対応スライドへ自動ジャンプ
  *   - seekSignal をインクリメント → usePlayback が再起動して再生中シークに対応
  */
-export default function Playbar({ state, dispatch, hideSlideNav = false }) {
+export default function Playbar({
+  state,
+  dispatch,
+  hideSlideNav = false,
+  onTogglePlay = null,
+  playbackBusy = false,
+  onSeekStart = null,
+  onSeekPreview = null,
+  onSeekEnd = null,
+}) {
   const { curT, totDur, playing, playSpeed, slides, curSl, hls, sents, appMode } = state;
   const pct    = totDur > 0 ? (curT / totDur) * 100 : 0;
   const remain = Math.max(0, totDur - curT);
@@ -39,14 +48,18 @@ export default function Playbar({ state, dispatch, hideSlideNav = false }) {
     const r = barRef.current.getBoundingClientRect();
     const t = Math.max(0, Math.min(totDur, ((clientX - r.left) / r.width) * totDur));
     dispatch({ type: "SEEK", v: t });
+    onSeekPreview?.(t);
   };
 
   const onMouseDown = (e) => {
+    e.preventDefault();
+    onSeekStart?.();
     seekTo(e.clientX);
     const onMove = (ev) => seekTo(ev.clientX);
     const onUp   = ()   => {
       document.removeEventListener("mousemove", onMove);
       document.removeEventListener("mouseup",   onUp);
+      onSeekEnd?.();
     };
     document.addEventListener("mousemove", onMove);
     document.addEventListener("mouseup",   onUp);
@@ -76,9 +89,9 @@ export default function Playbar({ state, dispatch, hideSlideNav = false }) {
       <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 12px" }}>
 
         {/* 再生/停止 */}
-        <button onClick={() => dispatch({ type: "SET", k: "playing", v: !playing })}
+        <button onClick={() => (onTogglePlay ? onTogglePlay() : dispatch({ type: "SET", k: "playing", v: !playing }))}
           style={{ width: 32, height: 32, background: "var(--ac)", border: "none", borderRadius: "50%", color: "#fff", fontSize: 12, display: "grid", placeItems: "center", flexShrink: 0 }}>
-          {playing ? "⏸" : "▶"}
+          {playbackBusy ? "…" : playing ? "⏸" : "▶"}
         </button>
 
         {/* タイムライン */}

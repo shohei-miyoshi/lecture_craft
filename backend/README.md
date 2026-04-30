@@ -76,6 +76,10 @@ bash scripts/dev_backend.sh
 bash scripts/setup_backend_full.sh
 ```
 
+このスクリプトは追加の visual dependencies を入れるだけでなく、
+`backend/models/config.yml` と `backend/models/model_final.pth` も取得します。
+macOS では `detectron2` ビルドのために PyTorch ヘッダへ互換パッチを自動適用します。
+
 ローカルに `../auto_lecture/.venv` が残っていて、そこに `moviepy` / `detectron2` /
 `imageio_ffmpeg` が入っている場合、`bash scripts/dev_backend.sh` はその venv を自動利用します。
 
@@ -119,6 +123,25 @@ curl http://127.0.0.1:8000/api/health
 実運用では `DATABASE_URL` で PostgreSQL に切り替える想定です。
 DB 自体は外部ストレージですが、接続設定・テーブル定義・保存 API は `backend/app/` のコードにあります。
 最初に作成されたアカウントは管理者になり、管理系 API は管理者のみ利用できます。
+
+保存済み project だけでなく、編集中 workspace の autosave draft も backend DB に保存されます。
+同じ DB を参照している限り、ブラウザリロードや backend 再起動後も workspace を復元できます。
+本番や MCP サーバ側でこれを維持したい場合は、
+`DATABASE_URL` を永続 DB に向けるか、SQLite を置く volume 自体を永続化してください。
+
+preview 音声まわりは次のように動きます。
+
+- 生成直後で未編集なら、既存の生成済み音声を preview に流す
+- 編集後だけ preview 用音声を再構成する
+- 再構成時は sentence 単位の TTS cache を使い、同じ文面の音声は再利用する
+
+関連 API:
+
+- `GET /api/workspace`
+- `PUT /api/workspace`
+- `DELETE /api/workspace`
+- `POST /api/preview-audio/render`
+- `GET /api/preview-audio/source`
 
 補足:
 - `backend/.venv` は `Python 3.10` または `3.11` で作ってください

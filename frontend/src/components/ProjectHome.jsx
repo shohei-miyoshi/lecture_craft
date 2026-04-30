@@ -97,6 +97,7 @@ export default function ProjectHome({
   onOpenProject,
   onResumeEditing,
   currentProject,
+  onProjectDeleted,
   requestConfirm,
   requestPrompt,
   addToast,
@@ -140,6 +141,7 @@ export default function ProjectHome({
     return sorted;
   }, [query, sortKey, storedProjects]);
   const currentData = currentProject?.data ?? null;
+  const currentProjectId = currentData?.project_meta?.id ?? null;
   const currentStatus = currentData?.status ?? null;
   const isGeneratingWorkspace = currentStatus === "proc";
 
@@ -153,17 +155,35 @@ export default function ProjectHome({
   };
 
   const handleDelete = async (projectId) => {
-    const project = await loadProject(projectId);
-    if (!project) return;
-    requestConfirm({
-      title: "プロジェクトを削除",
-      message: `「${project.name}」をローカル保存から削除しますか？`,
-      confirmLabel: "削除",
-      onConfirm: async () => {
-        await deleteProject(projectId);
-        setRefreshKey((v) => v + 1);
-      },
-    });
+    try {
+      const project = await loadProject(projectId);
+      if (!project) return;
+      const deletingCurrentWorkspace = Boolean(currentProjectId && currentProjectId === project.id);
+      requestConfirm({
+        title: "プロジェクトを削除",
+        message: deletingCurrentWorkspace
+          ? `「${project.name}」を削除しますか？\n現在の編集中ワークスペースと自動保存データも削除されます${isGeneratingWorkspace ? "。生成中のジョブも停止します。" : "。"}`
+          : `「${project.name}」を保存済みプロジェクトから削除しますか？`,
+        confirmLabel: "削除",
+        onConfirm: async () => {
+          try {
+            await deleteProject(projectId);
+            if (deletingCurrentWorkspace) {
+              await onProjectDeleted?.(project);
+            } else {
+              addToast?.("ok", `プロジェクト「${project.name}」を削除しました`);
+            }
+            setRefreshKey((v) => v + 1);
+          } catch (error) {
+            console.warn("Failed to delete project:", error);
+            addToast?.("er", "プロジェクトの削除に失敗しました");
+          }
+        },
+      });
+    } catch (error) {
+      console.warn("Failed to load project for deletion:", error);
+      addToast?.("er", "削除対象のプロジェクトを読み込めませんでした");
+    }
   };
 
   const handleRename = (project) => {
@@ -177,9 +197,14 @@ export default function ProjectHome({
       onConfirm: async (value) => {
         const nextName = String(value ?? "").trim();
         if (!nextName || nextName === project.name) return;
-        await updateProjectName(project.id, nextName);
-        setRefreshKey((v) => v + 1);
-        addToast?.("ok", `プロジェクト名を「${nextName}」に変更しました`);
+        try {
+          await updateProjectName(project.id, nextName);
+          setRefreshKey((v) => v + 1);
+          addToast?.("ok", `プロジェクト名を「${nextName}」に変更しました`);
+        } catch (error) {
+          console.warn("Failed to rename project:", error);
+          addToast?.("er", "プロジェクト名の変更に失敗しました");
+        }
       },
     });
   };
@@ -189,12 +214,17 @@ export default function ProjectHome({
   };
 
   const handleOpenStoredProject = async (projectId) => {
-    const project = await loadProject(projectId);
-    if (!project) {
+    try {
+      const project = await loadProject(projectId);
+      if (!project) {
+        addToast?.("er", "プロジェクト本体を読み込めませんでした");
+        return;
+      }
+      onOpenProject?.(project);
+    } catch (error) {
+      console.warn("Failed to open project:", error);
       addToast?.("er", "プロジェクト本体を読み込めませんでした");
-      return;
     }
-    onOpenProject?.(project);
   };
 
   return (
@@ -372,7 +402,7 @@ export default function ProjectHome({
                     {projects.length} 件
                   </div>
                 </div>
-                <div style={{ fontSize: 11, color: "var(--tm)" }}>ローカルブラウザに保存されている編集データです</div>
+                <div style={{ fontSize: 11, color: "var(--tm)" }}>保存済みプロジェクト一覧です。編集中ワークスペースとは別に管理されます。</div>
               </div>
               <div style={{ display: "flex", gap: 8, alignItems: "center", paddingBottom: 2 }}>
                 <input

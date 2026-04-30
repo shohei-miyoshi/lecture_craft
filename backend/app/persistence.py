@@ -349,6 +349,164 @@ def get_project_for_user(project_id: str, user_id: str) -> Dict[str, Any]:
     return _project_payload_from_row(row)
 
 
+def get_workspace_draft_for_user(user_id: str) -> Optional[Dict[str, Any]]:
+    with db_conn() as conn:
+        row = conn.execute(
+            """
+            SELECT user_id, session_id, workspace_id, revision, is_deleted, data_json, created_at, updated_at
+            FROM workspace_drafts
+            WHERE user_id = :user_id
+            """,
+            {"user_id": user_id},
+        ).fetchone()
+    if row is None:
+        return None
+    if int(row["is_deleted"] or 0) == 1:
+        return None
+    return {
+        "user_id": row["user_id"],
+        "session_id": row["session_id"],
+        "workspace_id": row["workspace_id"],
+        "revision": int(row["revision"] or 0),
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+        "data": _loads(row["data_json"], {}),
+    }
+
+
+def save_workspace_draft_for_user(
+    *,
+    user_id: str,
+    session_id: Optional[str],
+    workspace_id: Optional[str],
+    revision: Optional[int],
+    data: Dict[str, Any],
+) -> Dict[str, Any]:
+    now = _now_iso()
+    payload_json = json_text(data if isinstance(data, dict) else {})
+    with db_conn() as conn:
+        existing = conn.execute(
+            "SELECT created_at, revision, workspace_id, session_id, is_deleted, data_json, updated_at FROM workspace_drafts WHERE user_id = :user_id",
+            {"user_id": user_id},
+        ).fetchone()
+        incoming_revision = max(0, int(revision or 0))
+        if existing is not None and incoming_revision < int(existing["revision"] or 0):
+            if int(existing["is_deleted"] or 0) == 1:
+                return {
+                    "ok": True,
+                    "ignored": True,
+                    "revision": int(existing["revision"] or 0),
+                    "workspace_id": existing["workspace_id"],
+                }
+            return {
+                "user_id": user_id,
+                "session_id": existing["session_id"],
+                "workspace_id": existing["workspace_id"],
+                "revision": int(existing["revision"] or 0),
+                "created_at": existing["created_at"],
+                "updated_at": existing["updated_at"],
+                "data": _loads(existing["data_json"], {}),
+                "ignored": True,
+            }
+        created_at = existing["created_at"] if existing else now
+        if existing is None:
+            conn.execute(
+                """
+                INSERT INTO workspace_drafts (
+                    user_id, session_id, workspace_id, revision, is_deleted, data_json, created_at, updated_at
+                ) VALUES (
+                    :user_id, :session_id, :workspace_id, :revision, :is_deleted, :data_json, :created_at, :updated_at
+                )
+                """,
+                {
+                    "user_id": user_id,
+                    "session_id": session_id,
+                    "workspace_id": workspace_id,
+                    "revision": incoming_revision,
+                    "is_deleted": 0,
+                    "data_json": payload_json,
+                    "created_at": created_at,
+                    "updated_at": now,
+                },
+            )
+        else:
+            conn.execute(
+                """
+                UPDATE workspace_drafts
+                SET session_id = :session_id, workspace_id = :workspace_id, revision = :revision, is_deleted = :is_deleted, data_json = :data_json, updated_at = :updated_at
+                WHERE user_id = :user_id
+                """,
+                {
+                    "user_id": user_id,
+                    "session_id": session_id,
+                    "workspace_id": workspace_id,
+                    "revision": incoming_revision,
+                    "is_deleted": 0,
+                    "data_json": payload_json,
+                    "updated_at": now,
+                },
+            )
+    return {
+        "user_id": user_id,
+        "session_id": session_id,
+        "workspace_id": workspace_id,
+        "revision": incoming_revision,
+        "created_at": created_at,
+        "updated_at": now,
+        "data": data if isinstance(data, dict) else {},
+    }
+
+
+def delete_workspace_draft_for_user(
+    user_id: str,
+    *,
+    session_id: Optional[str] = None,
+    workspace_id: Optional[str] = None,
+    revision: Optional[int] = None,
+) -> Dict[str, Any]:
+    now = _now_iso()
+    incoming_revision = max(0, int(revision or 0))
+    with db_conn() as conn:
+        existing = conn.execute(
+            "SELECT created_at, revision FROM workspace_drafts WHERE user_id = :user_id",
+            {"user_id": user_id},
+        ).fetchone()
+        if existing is not None and incoming_revision < int(existing["revision"] or 0):
+            return {"ok": True, "ignored": True, "revision": int(existing["revision"] or 0)}
+        created_at = existing["created_at"] if existing else now
+        payload = {
+            "user_id": user_id,
+            "session_id": session_id,
+            "workspace_id": workspace_id,
+            "revision": incoming_revision,
+            "is_deleted": 1,
+            "data_json": json_text({}),
+            "created_at": created_at,
+            "updated_at": now,
+        }
+        if existing is None:
+            conn.execute(
+                """
+                INSERT INTO workspace_drafts (
+                    user_id, session_id, workspace_id, revision, is_deleted, data_json, created_at, updated_at
+                ) VALUES (
+                    :user_id, :session_id, :workspace_id, :revision, :is_deleted, :data_json, :created_at, :updated_at
+                )
+                """,
+                payload,
+            )
+        else:
+            conn.execute(
+                """
+                UPDATE workspace_drafts
+                SET session_id = :session_id, workspace_id = :workspace_id, revision = :revision, is_deleted = :is_deleted, data_json = :data_json, updated_at = :updated_at
+                WHERE user_id = :user_id
+                """,
+                payload,
+            )
+    return {"ok": True, "revision": incoming_revision}
+
+
 def _next_project_version(conn: Any, project_id: str) -> int:
     row = conn.execute(
         "SELECT COALESCE(MAX(version_number), 0) AS max_version FROM project_versions WHERE project_id = :project_id",

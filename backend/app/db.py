@@ -193,6 +193,17 @@ def init_db() -> None:
         )
         """,
         """
+        CREATE TABLE IF NOT EXISTS workspace_drafts (
+            user_id TEXT PRIMARY KEY,
+            session_id TEXT,
+            data_json TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+            FOREIGN KEY (session_id) REFERENCES user_sessions(id) ON DELETE SET NULL
+        )
+        """,
+        """
         CREATE TABLE IF NOT EXISTS project_versions (
             id TEXT PRIMARY KEY,
             project_id TEXT NOT NULL,
@@ -279,6 +290,9 @@ def init_db() -> None:
         _ensure_column(conn, "users", "password_hash", "TEXT")
         _ensure_column(conn, "users", "role", "TEXT NOT NULL DEFAULT 'user'")
         _ensure_column(conn, "users", "is_active", "INTEGER NOT NULL DEFAULT 1")
+        _ensure_column(conn, "workspace_drafts", "workspace_id", "TEXT")
+        _ensure_column(conn, "workspace_drafts", "revision", "INTEGER NOT NULL DEFAULT 0")
+        _ensure_column(conn, "workspace_drafts", "is_deleted", "INTEGER NOT NULL DEFAULT 0")
         conn.raw.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username_unique ON users(username)")
 
         existing = conn.execute(

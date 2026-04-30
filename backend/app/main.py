@@ -24,14 +24,17 @@ from .models import (
     ResearchSessionRequest,
     ReviewSettingsPatchRequest,
     ScriptReviewRequest,
+    WorkspaceDraftRequest,
 )
 from .persistence import (
     create_guest_session,
+    delete_workspace_draft_for_user,
     delete_project_for_user,
     get_project_for_user,
     get_project_review_state,
     get_review_settings,
     get_session_context,
+    get_workspace_draft_for_user,
     join_experiment,
     login_user,
     list_projects_for_user,
@@ -41,9 +44,10 @@ from .persistence import (
     save_project_events,
     save_project_for_user,
     save_script_review_records,
+    save_workspace_draft_for_user,
     upsert_review_settings,
 )
-from .service import ApiError, export_media, save_research_session
+from .service import ApiError, export_media, export_preview_audio_source, render_preview_audio, save_research_session
 
 
 app = FastAPI(title="LectureCraft Backend API")
@@ -192,6 +196,43 @@ def project_delete_endpoint(project_id: str, x_kenkyu_session: str | None = Head
     return {"ok": True, "project_id": project_id}
 
 
+@app.get("/api/workspace")
+def workspace_get_endpoint(x_kenkyu_session: str | None = Header(default=None)):
+    session = _require_session(x_kenkyu_session)
+    return {"draft": get_workspace_draft_for_user(session["user"]["id"])}
+
+
+@app.put("/api/workspace")
+def workspace_put_endpoint(req: WorkspaceDraftRequest, x_kenkyu_session: str | None = Header(default=None)):
+    session = _require_session(x_kenkyu_session)
+    return save_workspace_draft_for_user(
+        user_id=session["user"]["id"],
+        session_id=session["session_id"],
+        workspace_id=req.workspace_id,
+        revision=req.revision,
+        data=req.data,
+    )
+
+
+@app.delete("/api/workspace")
+def workspace_delete_endpoint(
+    x_kenkyu_session: str | None = Header(default=None),
+    x_workspace_id: str | None = Header(default=None),
+    x_workspace_revision: str | None = Header(default=None),
+):
+    session = _require_session(x_kenkyu_session)
+    try:
+        revision = int(x_workspace_revision) if x_workspace_revision is not None else None
+    except Exception:
+        revision = None
+    return delete_workspace_draft_for_user(
+        session["user"]["id"],
+        session_id=session["session_id"],
+        workspace_id=x_workspace_id,
+        revision=revision,
+    )
+
+
 @app.post("/api/projects/{project_id}/events")
 def project_events_endpoint(project_id: str, req: ProjectEventsRequest, x_kenkyu_session: str | None = Header(default=None)):
     session = _require_session(x_kenkyu_session)
@@ -274,3 +315,13 @@ def research_session_endpoint(req: ResearchSessionRequest):
 @app.post("/api/export")
 def export_endpoint(req: ExportRequest):
     return export_media(req)
+
+
+@app.post("/api/preview-audio/render")
+def preview_audio_render_endpoint(req: ExportRequest):
+    return render_preview_audio(req)
+
+
+@app.get("/api/preview-audio/source")
+def preview_audio_source_endpoint(output_root_name: str, material_name: str):
+    return export_preview_audio_source(output_root_name=output_root_name, material_name=material_name)
