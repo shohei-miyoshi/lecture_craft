@@ -36,6 +36,48 @@ function timeText(value) {
   }
 }
 
+function profileKeyFor({ difficulty, detail, mode }) {
+  return `${difficulty}.${detail}.${mode}`;
+}
+
+function selectedProfileFromKg(row, { difficulty, detail, mode }) {
+  const key = profileKeyFor({ difficulty, detail, mode });
+  const profile = row?.scoring?.profiles?.[key] ?? row?.kg_result?.scoring?.selected_profile ?? null;
+  return { key, profile };
+}
+
+function formatScore(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "—";
+  return number.toFixed(3);
+}
+
+function FocusConceptPreview({ profileKey, profile }) {
+  const rows = Array.isArray(profile?.top_concepts) ? profile.top_concepts : [];
+  return (
+    <div style={{ display: "grid", gap: 6 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
+        <div style={{ fontSize: 11, fontWeight: 700 }}>選択 profile</div>
+        <span style={badgeStyle("accent")}>{profileKey}</span>
+      </div>
+      {rows.length === 0 ? (
+        <div style={{ fontSize: 10, color: "var(--tm)", lineHeight: 1.6 }}>
+          この KG にはまだ scoring 情報がありません。KG比較ページで再生成すると表示されます。
+        </div>
+      ) : (
+        <div style={{ display: "grid", gap: 5 }}>
+          {rows.map((row, index) => (
+            <div key={`${profileKey}_${row?.id ?? index}`} style={{ display: "flex", justifyContent: "space-between", gap: 8, padding: "6px 8px", borderRadius: 8, border: "1px solid rgba(255,255,255,.05)", background: "rgba(255,255,255,.02)", fontSize: 10 }}>
+              <span style={{ color: "var(--tp)" }}>{index + 1}. {row?.id ?? "—"}</span>
+              <span style={{ color: "var(--ac)" }}>{formatScore(row?.adjusted_score)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ScriptColumn({ title, payload }) {
   const stats = payload?.stats ?? {};
   const outline = payload?.outline_json ?? {};
@@ -156,6 +198,11 @@ export default function ScriptComparePage({
     () => kgResults.find((row) => row?.result_id === selectedKgResultId) ?? null,
     [kgResults, selectedKgResultId],
   );
+  const currentProfile = selectedProfileFromKg(selectedKg, {
+    mode: MODE_VALS[modeIdx] ?? "audio",
+    detail: DETAIL_VALS[detailIdx] ?? "standard",
+    difficulty: DIFF_VALS[difficultyIdx] ?? "basic",
+  });
   const resultModeIdx = Math.max(0, MODE_VALS.indexOf(result?.settings?.mode ?? ""));
   const resultDetailIdx = Math.max(0, DETAIL_VALS.indexOf(result?.settings?.detail ?? ""));
   const resultDifficultyIdx = Math.max(0, DIFF_VALS.indexOf(result?.settings?.difficulty ?? ""));
@@ -351,6 +398,10 @@ export default function ScriptComparePage({
           </div>
 
           <div style={{ ...cardStyle(), marginBottom: 12 }}>
+            <FocusConceptPreview profileKey={currentProfile.key} profile={currentProfile.profile} />
+          </div>
+
+          <div style={{ ...cardStyle(), marginBottom: 12 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 8 }}>
               <div style={{ fontSize: 11, fontWeight: 700 }}>過去の比較</div>
               <button onClick={loadHistory} style={{ padding: "4px 8px", borderRadius: 8, border: "1px solid rgba(255,255,255,.1)", background: "rgba(255,255,255,.03)", color: "var(--ts)", fontSize: 10 }}>
@@ -450,6 +501,10 @@ export default function ScriptComparePage({
                 <div style={{ fontSize: 10, color: "var(--ts)", lineHeight: 1.6 }}>
                   {(result.notes ?? []).join(" ")}
                 </div>
+                <FocusConceptPreview
+                  profileKey={result?.kg_result?.scoring?.selected_profile_key ?? currentProfile.key}
+                  profile={result?.kg_result?.scoring?.selected_profile ?? currentProfile.profile}
+                />
               </div>
 
               <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 12, alignItems: "start" }}>

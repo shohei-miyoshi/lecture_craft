@@ -139,11 +139,62 @@ def _sort_kg_nodes_for_prompt(nodes: List[Dict[str, Any]]) -> List[Dict[str, Any
     return sorted(
         nodes,
         key=lambda row: (
+            -float(row.get("adjusted_score") or row.get("degree_centrality") or 0),
             -(int(row.get("importance") or 0)),
-            len(row.get("slide_refs") or []),
+            -len(row.get("slide_refs") or []),
             str(row.get("id") or ""),
         ),
     )
+
+
+def _selected_profile(kg_guidance: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    if not isinstance(kg_guidance, dict):
+        return {}
+    profile = kg_guidance.get("selected_profile")
+    return profile if isinstance(profile, dict) else {}
+
+
+def _scoring_metrics(kg_guidance: Optional[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+    if not isinstance(kg_guidance, dict):
+        return {}
+    scoring = kg_guidance.get("scoring") if isinstance(kg_guidance.get("scoring"), dict) else {}
+    metrics = scoring.get("metrics") if isinstance(scoring.get("metrics"), dict) else {}
+    return {str(key): value for key, value in metrics.items() if isinstance(value, dict)}
+
+
+def _concept_rows_from_profile(kg_guidance: Optional[Dict[str, Any]], key: str) -> List[Dict[str, Any]]:
+    profile = _selected_profile(kg_guidance)
+    rows = profile.get(key) if isinstance(profile.get(key), list) else []
+    metrics = _scoring_metrics(kg_guidance)
+    enriched = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        node_id = str(row.get("id") or "").strip()
+        if not node_id:
+            continue
+        metric = metrics.get(node_id) or {}
+        enriched.append(
+            {
+                **metric,
+                **row,
+                "id": node_id,
+                "slide_refs": row.get("slide_refs") or metric.get("slide_refs") or [],
+                "evidence_text": row.get("evidence_text") or metric.get("evidence_text") or [],
+            }
+        )
+    return enriched
+
+
+def _top_profile_concepts(kg_guidance: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    rows = _concept_rows_from_profile(kg_guidance, "top_concepts")
+    if rows:
+        return rows
+    return _sort_kg_nodes_for_prompt(_normalize_kg_nodes(kg_guidance))[:8]
+
+
+def _brief_profile_concepts(kg_guidance: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    return _concept_rows_from_profile(kg_guidance, "brief_concepts")
 
 
 def _format_slide_refs(slide_refs: Any) -> str:
@@ -157,7 +208,8 @@ def _format_slide_refs(slide_refs: Any) -> str:
 
 
 def build_outline_kg_guidance_block(kg_guidance: Optional[Dict[str, Any]]) -> str:
-    nodes = _sort_kg_nodes_for_prompt(_normalize_kg_nodes(kg_guidance))[:8]
+    nodes = _top_profile_concepts(kg_guidance)[:8]
+    brief_nodes = _brief_profile_concepts(kg_guidance)[:5]
     edges = _normalize_kg_edges(kg_guidance)[:10]
     if not nodes and not edges:
         return ""
@@ -167,10 +219,20 @@ def build_outline_kg_guidance_block(kg_guidance: Optional[Dict[str, Any]]) -> st
         node_id = str(row.get("id") or "").strip()
         if not node_id:
             continue
-        importance = row.get("importance")
+        adjusted_score = row.get("adjusted_score")
+        centrality = row.get("base_degree_centrality") or row.get("degree_centrality")
+        emphasis = row.get("emphasis") or "—"
         slide_refs = _format_slide_refs(row.get("slide_refs"))
         evidence = " / ".join([str(text).strip() for text in (row.get("evidence_text") or []) if str(text).strip()][:2]) or "—"
-        node_lines.append(f"- {node_id} (importance={importance if importance is not None else '—'}, slides={slide_refs}, evidence={evidence})")
+        node_lines.append(
+            f"- {node_id} (adjusted_score={adjusted_score if adjusted_score is not None else '—'}, degree={centrality if centrality is not None else '—'}, emphasis={emphasis}, slides={slide_refs}, evidence={evidence})"
+        )
+
+    brief_lines = []
+    for row in brief_nodes:
+        node_id = str(row.get("id") or "").strip()
+        if node_id:
+            brief_lines.append(f"- {node_id}")
 
     edge_lines = []
     for row in edges:
@@ -185,11 +247,15 @@ def build_outline_kg_guidance_block(kg_guidance: Optional[Dict[str, Any]]) -> st
     parts = [
         "[Knowledge Graph Guidance]",
         "以下は同じスライド群から抽出した KG の要約です。内容を新たに発明するためではなく、重要概念や説明順を整理するヒントとしてのみ使ってください。",
-        "KG をもとに、重要になりそうな単語については、聞き手が理解しやすいよう説明を少し詳しくしてください。",
+        "adjusted_score は次数中心性を主指標に、学習者要求（難易度・詳細度・提示形態）で補正した重点度です。",
+        "重点的に説明する語句は、スライドに根拠がある範囲で少し詳しく説明してください。短く触れる語句は、必要な接続説明に留めてください。スライドにない定義・事実・例は捏造しないでください。",
     ]
     if node_lines:
-        parts.append("[重要概念]")
+        parts.append("[重点的に説明する語句]")
         parts.extend(node_lines)
+    if brief_lines:
+        parts.append("[短く触れる語句]")
+        parts.extend(brief_lines)
     if edge_lines:
         parts.append("[主な概念関係]")
         parts.extend(edge_lines)
@@ -198,9 +264,11 @@ def build_outline_kg_guidance_block(kg_guidance: Optional[Dict[str, Any]]) -> st
 
 
 def build_chapter_kg_guidance_block(kg_guidance: Optional[Dict[str, Any]], target_slides: List[Any]) -> str:
-    nodes = _normalize_kg_nodes(kg_guidance)
+    nodes = _top_profile_concepts(kg_guidance)
+    fallback_nodes = _sort_kg_nodes_for_prompt(_normalize_kg_nodes(kg_guidance))
+    brief_nodes = _brief_profile_concepts(kg_guidance)
     edges = _normalize_kg_edges(kg_guidance)
-    if not nodes and not edges:
+    if not nodes and not fallback_nodes and not edges:
         return ""
 
     target_set = set()
@@ -224,6 +292,16 @@ def build_chapter_kg_guidance_block(kg_guidance: Optional[Dict[str, Any]], targe
         return False
 
     relevant_nodes = [row for row in _sort_kg_nodes_for_prompt(nodes) if is_relevant_row(row)][:6]
+    if len(relevant_nodes) < 3:
+        existing_ids = {str(row.get("id") or "").strip() for row in relevant_nodes}
+        for row in _sort_kg_nodes_for_prompt(nodes + fallback_nodes):
+            node_id = str(row.get("id") or "").strip()
+            if not node_id or node_id in existing_ids:
+                continue
+            relevant_nodes.append(row)
+            existing_ids.add(node_id)
+            if len(relevant_nodes) >= 3:
+                break
     relevant_node_ids = {str(row.get("id") or "").strip() for row in relevant_nodes}
     relevant_edges = []
     for row in edges:
@@ -241,17 +319,28 @@ def build_chapter_kg_guidance_block(kg_guidance: Optional[Dict[str, Any]], targe
     parts = [
         "[Knowledge Graph Guidance for this chapter]",
         "以下は、この章の target_slides に関係する KG の要約です。スライドに書かれていない話題を足すためではなく、説明の重点と順序を整えるヒントとして使ってください。",
-        "KG をもとに、この章で重要になりそうな単語については、聞き手が理解しやすいよう説明を少し詳しくしてください。",
+        "adjusted_score が高い語句を重点的に説明し、短く触れる語句は接続説明に留めてください。スライドにない情報は捏造しないでください。",
     ]
     if relevant_nodes:
-        parts.append("[関連概念]")
+        parts.append("[この章で重点的に説明する語句]")
         for row in relevant_nodes:
             node_id = str(row.get("id") or "").strip()
             if not node_id:
                 continue
-            importance = row.get("importance")
+            adjusted_score = row.get("adjusted_score")
+            centrality = row.get("base_degree_centrality") or row.get("degree_centrality")
+            emphasis = row.get("emphasis") or "—"
             evidence = " / ".join([str(text).strip() for text in (row.get("evidence_text") or []) if str(text).strip()][:2]) or "—"
-            parts.append(f"- {node_id} (importance={importance if importance is not None else '—'}, evidence={evidence})")
+            parts.append(
+                f"- {node_id} (adjusted_score={adjusted_score if adjusted_score is not None else '—'}, degree={centrality if centrality is not None else '—'}, emphasis={emphasis}, evidence={evidence})"
+            )
+    relevant_brief_nodes = [row for row in brief_nodes if is_relevant_row(row)][:4]
+    if relevant_brief_nodes:
+        parts.append("[短く触れる語句]")
+        for row in relevant_brief_nodes:
+            node_id = str(row.get("id") or "").strip()
+            if node_id:
+                parts.append(f"- {node_id}")
     if relevant_edges:
         parts.append("[関連する概念関係]")
         for row in relevant_edges:

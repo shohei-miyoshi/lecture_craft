@@ -30,6 +30,7 @@ from auto_lecture.gpt_utils import (
 )
 
 from .models import KgPreviewCompareRequest, KgPreviewRequest
+from .kg_scoring import build_kg_scoring
 from .service import ApiError, ensure_pdf_images, ensure_pdf_upload, short_id, timestamp_slug
 
 
@@ -662,6 +663,7 @@ def build_result_payload(
     output_dir.mkdir(parents=True, exist_ok=True)
     created_at = datetime.now().isoformat()
     graph_payload = graph_payload_override or build_graph_payload(triplets)
+    scoring = build_kg_scoring(graph_payload)
     triplet_rows = [
         {"prerequisite": prerequisite, "relation": relation, "dependent": dependent}
         for prerequisite, relation, dependent in triplets
@@ -716,6 +718,11 @@ def build_result_payload(
         "summary_text": summary_text,
         "notes": list(notes),
         "visualization": visualization,
+        "scoring": {
+            "version": scoring["version"],
+            "profile_count": len(scoring["profiles"]),
+            "base_top_concepts": scoring["base_top_concepts"],
+        },
     }
     if extra_metadata:
         metadata.update(extra_metadata)
@@ -751,6 +758,7 @@ def build_result_payload(
         },
         "triplets": triplet_rows,
         "graph": graph_payload,
+        "scoring": scoring,
         "prompt": prompt,
         "raw_response": raw_response,
         "metadata": metadata,
@@ -1745,6 +1753,11 @@ def build_catalog_item(payload: Dict[str, Any]) -> Dict[str, Any]:
             "correction_attempts": summary.get("correction_attempts"),
             "summary_text": summary.get("summary_text"),
             "notes": summary.get("notes") or [],
+        },
+        "scoring": {
+            "version": (payload.get("scoring") or {}).get("version"),
+            "base_top_concepts": (payload.get("scoring") or {}).get("base_top_concepts") or [],
+            "profiles": (payload.get("scoring") or {}).get("profiles") or {},
         },
         "output_dir": payload.get("output_dir"),
     }

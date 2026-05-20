@@ -1,5 +1,6 @@
 import ELK from "elkjs/lib/elk.bundled.js";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { DETAIL_LABELS, DETAIL_VALS, DIFF_LABELS, DIFF_VALS, MODE_LABELS, MODE_VALS } from "../utils/constants.js";
 import { authFetch } from "../utils/sessionStore.js";
 import { toB64 } from "../utils/helpers.js";
 
@@ -773,6 +774,50 @@ function SummaryBadge({ children, tone = "default" }) {
   );
 }
 
+function profileKeyFor({ difficulty, detail, mode }) {
+  return `${difficulty}.${detail}.${mode}`;
+}
+
+function selectScoringProfile(payload, scoreProfile) {
+  const scoring = payload?.scoring ?? {};
+  const profiles = scoring?.profiles ?? {};
+  const key = profileKeyFor(scoreProfile);
+  return {
+    key,
+    profile: profiles[key] ?? null,
+  };
+}
+
+function formatScore(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "—";
+  return number.toFixed(3);
+}
+
+function ConceptScoreList({ title, concepts, emptyText = "該当なし" }) {
+  const rows = Array.isArray(concepts) ? concepts : [];
+  return (
+    <div style={{ display: "grid", gap: 6 }}>
+      <div style={{ fontSize: 10, fontWeight: 700, color: "var(--tp)" }}>{title}</div>
+      {rows.length === 0 ? (
+        <div style={{ fontSize: 10, color: "var(--tm)" }}>{emptyText}</div>
+      ) : (
+        <div style={{ display: "grid", gap: 5 }}>
+          {rows.map((row, index) => (
+            <div key={`${title}_${row?.id ?? index}`} style={{ display: "grid", gap: 3, padding: "7px 8px", borderRadius: 8, border: "1px solid rgba(255,255,255,.05)", background: "rgba(255,255,255,.02)", fontSize: 10 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                <span style={{ color: "#fff", fontWeight: 700 }}>{index + 1}. {row?.id ?? "—"}</span>
+                <span style={{ color: "var(--ac)" }}>{formatScore(row?.adjusted_score ?? row?.degree_centrality)}</span>
+              </div>
+              {row?.reason && <div style={{ color: "var(--tm)", lineHeight: 1.45 }}>{row.reason}</div>}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function GraphPreview({ payload, compact = false, graphMode = "organized" }) {
   const [graph, setGraph] = useState(null);
   const [graphError, setGraphError] = useState(null);
@@ -998,6 +1043,7 @@ function ResultOverviewCard({ payload, selected, onToggle }) {
   const variant = payload?.variant ?? {};
   const descriptionText = sanitizeKgDescriptionText(variant.description ?? "—");
   const summaryText = sanitizeKgDescriptionText(summary.summary_text || "比較対象に残すかどうかをここで選びます。");
+  const baseTop = payload?.scoring?.base_top_concepts ?? [];
   return (
     <button
       onClick={onToggle}
@@ -1030,11 +1076,16 @@ function ResultOverviewCard({ payload, selected, onToggle }) {
         <SummaryBadge>node {summary.node_count ?? 0}</SummaryBadge>
         <SummaryBadge tone={summary.is_dag ? "good" : "warn"}>{summary.is_dag ? "循環なし (DAG)" : "循環あり"}</SummaryBadge>
       </div>
+      {baseTop.length > 0 && (
+        <div style={{ fontSize: 10, color: "var(--ts)", lineHeight: 1.55 }}>
+          次数中心性Top: {baseTop.slice(0, 3).map((row) => row.id).join(" / ")}
+        </div>
+      )}
     </button>
   );
 }
 
-function KgResultCard({ payload, onRemove, visibleSections, graphMode }) {
+function KgResultCard({ payload, onRemove, visibleSections, graphMode, scoreProfile }) {
   const summary = payload?.summary ?? {};
   const triplets = payload?.triplets ?? [];
   const variant = payload?.variant ?? {};
@@ -1045,6 +1096,11 @@ function KgResultCard({ payload, onRemove, visibleSections, graphMode }) {
   const edgeDetails = structured?.edges ?? [];
   const orderPlan = payload?.order_plan ?? null;
   const analysisPanels = Array.isArray(payload?.analysis_panels) ? payload.analysis_panels : [];
+  const scoring = payload?.scoring ?? {};
+  const scoringMetrics = scoring?.metrics ?? {};
+  const baseTop = scoring?.base_top_concepts ?? [];
+  const selectedScoring = selectScoringProfile(payload, scoreProfile);
+  const topConcepts = selectedScoring.profile?.top_concepts ?? [];
   const descriptionText = sanitizeKgDescriptionText(variant.description ?? "—");
   const summaryText = sanitizeKgDescriptionText(summary.summary_text || "summary なし");
   const visible = new Set(visibleSections);
@@ -1085,6 +1141,17 @@ function KgResultCard({ payload, onRemove, visibleSections, graphMode }) {
         {summaryText}
         {!visualization.available && visualization.reason ? ` Graphviz出力は未生成です: ${visualization.reason}` : ""}
       </div>
+      )}
+
+      {showSummary && scoring?.version && (
+        <div style={{ display: "grid", gap: 8, border: "1px solid rgba(255,255,255,.05)", borderRadius: 10, background: "rgba(255,255,255,.02)", padding: 10 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+            <div style={{ fontSize: 11, fontWeight: 700 }}>重要語句スコア</div>
+            <SummaryBadge>{selectedScoring.key}</SummaryBadge>
+          </div>
+          <ConceptScoreList title="次数中心性Top" concepts={baseTop.slice(0, 5).map((row) => ({ ...row, adjusted_score: row.degree_centrality }))} />
+          <ConceptScoreList title="この条件で詳説する語句" concepts={topConcepts} />
+        </div>
       )}
 
       {showSummary && notes.length > 0 && (
@@ -1181,6 +1248,8 @@ function KgResultCard({ payload, onRemove, visibleSections, graphMode }) {
               <div key={`${payload.result_id}_node_${index}`} style={{ fontSize: 10, lineHeight: 1.6, padding: "8px 9px", borderRadius: 8, background: "rgba(255,255,255,.02)", border: "1px solid rgba(255,255,255,.05)" }}>
                 <div style={{ marginBottom: 4, color: "#fff" }}>{row.id}</div>
                 <div style={{ color: "var(--tm)" }}>importance: {row.importance ?? "—"}</div>
+                <div style={{ color: "var(--tm)" }}>degree centrality: {formatScore(scoringMetrics?.[row.id]?.degree_centrality)}</div>
+                <div style={{ color: "var(--tm)" }}>adjusted score: {formatScore(topConcepts.find((concept) => concept?.id === row.id)?.adjusted_score)}</div>
                 <div style={{ color: "var(--tm)" }}>slide: {(row.slide_refs?.length ?? 0) > 0 ? row.slide_refs.join(", ") : "—"}</div>
                 <div style={{ color: "var(--ts)" }}>evidence: {(row.evidence_text?.length ?? 0) > 0 ? row.evidence_text.join(" / ") : "—"}</div>
               </div>
@@ -1275,6 +1344,14 @@ export default function KgPreviewPanel({ state, dispatch, pdfFile, addToast }) {
     ? state.kgVisibleSections
     : DEFAULT_VISIBLE_SECTIONS;
   const graphViewMode = state.kgGraphViewMode ?? "organized";
+  const scoreMode = state.kgScoreMode ?? "audio";
+  const scoreDetailIdx = Number.isInteger(state.kgScoreDetail) ? state.kgScoreDetail : 1;
+  const scoreDifficultyIdx = Number.isInteger(state.kgScoreDifficulty) ? state.kgScoreDifficulty : 1;
+  const scoreProfile = {
+    mode: scoreMode,
+    detail: DETAIL_VALS[scoreDetailIdx] ?? "standard",
+    difficulty: DIFF_VALS[scoreDifficultyIdx] ?? "basic",
+  };
   const catalogOpen = Boolean(state.kgCatalogOpen);
   const catalogBusy = Boolean(state.kgCatalogBusy);
   const catalogSelection = state.kgCatalogSelection ?? [];
@@ -1796,6 +1873,48 @@ export default function KgPreviewPanel({ state, dispatch, pdfFile, addToast }) {
               </div>
             </section>
 
+            <section style={{ border: "1px solid rgba(255,255,255,.05)", borderRadius: 12, background: "rgba(255,255,255,.015)", padding: 12 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", marginBottom: 10, flexWrap: "wrap" }}>
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "var(--tp)" }}>スコア確認条件</div>
+                  <div style={{ fontSize: 10, color: "var(--tm)" }}>同一 KG に対して、学習者要求ごとの重点語句ランキングを切り替えます。</div>
+                </div>
+                <SummaryBadge>{profileKeyFor(scoreProfile)}</SummaryBadge>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
+                <div>
+                  <div style={{ fontSize: 10, color: "var(--tm)", marginBottom: 6 }}>提示形態</div>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    {MODE_LABELS.map((label, idx) => (
+                      <button key={label} onClick={() => dispatch({ type: "SET", k: "kgScoreMode", v: MODE_VALS[idx] ?? "audio" })} style={pillStyle(scoreMode === (MODE_VALS[idx] ?? "audio"))}>
+                        <span style={{ fontSize: 10 }}>{label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 10, color: "var(--tm)", marginBottom: 6 }}>詳細度</div>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    {DETAIL_LABELS.map((label, idx) => (
+                      <button key={label} onClick={() => dispatch({ type: "SET", k: "kgScoreDetail", v: idx })} style={pillStyle(scoreDetailIdx === idx)}>
+                        <span style={{ fontSize: 10 }}>{label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 10, color: "var(--tm)", marginBottom: 6 }}>難易度</div>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    {DIFF_LABELS.map((label, idx) => (
+                      <button key={label} onClick={() => dispatch({ type: "SET", k: "kgScoreDifficulty", v: idx })} style={pillStyle(scoreDifficultyIdx === idx)}>
+                        <span style={{ fontSize: 10 }}>{label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </section>
+
             {focusedResults.length === 0 ? (
               <div style={{ padding: 16, color: "var(--tm)", fontSize: 11, lineHeight: 1.7, border: "1px dashed rgba(255,255,255,.08)", borderRadius: 12 }}>
                 上の結果一覧から、比較したい結果を選んでください。
@@ -1809,6 +1928,7 @@ export default function KgPreviewPanel({ state, dispatch, pdfFile, addToast }) {
                     onRemove={() => removeResult(payload.result_id)}
                     visibleSections={visibleSections}
                     graphMode={graphViewMode}
+                    scoreProfile={scoreProfile}
                   />
                 ))}
               </div>

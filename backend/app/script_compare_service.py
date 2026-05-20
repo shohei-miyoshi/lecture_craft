@@ -20,6 +20,7 @@ from auto_lecture.gpt_client import create_client
 from auto_lecture.paths import build_paths
 
 from .kg_preview_service import get_kg_preview_result
+from .kg_scoring import select_scoring_profile
 from .service import ApiError, DETAIL_MAP, LEVEL_MAP, MATERIAL_ROOT, ensure_pdf_images
 
 
@@ -63,7 +64,19 @@ def _extract_project_pdf_ref(project_data: Dict[str, Any]) -> Dict[str, str]:
     return {"material_name": material_name, "filename": filename or material_name}
 
 
-def _build_kg_guidance_payload(kg_payload: Dict[str, Any]) -> Dict[str, Any]:
+def _build_kg_guidance_payload(
+    kg_payload: Dict[str, Any],
+    *,
+    mode: str,
+    detail: str,
+    difficulty: str,
+) -> Dict[str, Any]:
+    profile_key, profile = select_scoring_profile(
+        kg_payload.get("scoring") if isinstance(kg_payload.get("scoring"), dict) else {},
+        difficulty=difficulty,
+        detail=detail,
+        mode=mode,
+    )
     return {
         "result_id": kg_payload.get("result_id"),
         "variant": kg_payload.get("variant") or {},
@@ -71,6 +84,9 @@ def _build_kg_guidance_payload(kg_payload: Dict[str, Any]) -> Dict[str, Any]:
         "graph": kg_payload.get("graph") or {},
         "triplets": kg_payload.get("triplets") or [],
         "structured": kg_payload.get("structured") or {},
+        "scoring": kg_payload.get("scoring") or {},
+        "selected_profile_key": profile_key,
+        "selected_profile": profile,
         "notes": kg_payload.get("summary", {}).get("notes") or [],
     }
 
@@ -112,6 +128,7 @@ def _build_catalog_item(payload: Dict[str, Any]) -> Dict[str, Any]:
             "created_at": kg_result.get("created_at"),
             "variant": kg_result.get("variant") or {},
             "summary": kg_result.get("summary") or {},
+            "scoring": kg_result.get("scoring") or {},
         },
         "baseline_stats": baseline.get("stats") or {},
         "kg_assisted_stats": kg_assisted.get("stats") or {},
@@ -258,7 +275,12 @@ def render_script_compare(
         user_id=owner_user_id,
         project_id=project_id,
     )
-    kg_guidance = _build_kg_guidance_payload(kg_payload)
+    kg_guidance = _build_kg_guidance_payload(
+        kg_payload,
+        mode=mode,
+        detail=detail,
+        difficulty=difficulty,
+    )
 
     compare_id = f"scriptcmp_{_timestamp_slug()}_{_short_id()}"
     output_dir = SCRIPT_COMPARE_ROOT / compare_id
@@ -359,6 +381,11 @@ def render_script_compare(
             "created_at": kg_payload.get("created_at"),
             "variant": kg_payload.get("variant") or {},
             "summary": kg_payload.get("summary") or {},
+            "scoring": {
+                "version": (kg_payload.get("scoring") or {}).get("version"),
+                "selected_profile_key": kg_guidance.get("selected_profile_key"),
+                "selected_profile": kg_guidance.get("selected_profile") or {},
+            },
         },
         "baseline": baseline,
         "kg_assisted": kg_assisted,
