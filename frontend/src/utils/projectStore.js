@@ -104,7 +104,7 @@ export async function updateProjectName(projectId, nextName) {
   });
 }
 
-export function buildProjectData(state, name) {
+export function buildProjectData(state, name, pdfFile = null, pdfRef = null) {
   const now = new Date().toISOString();
   const projectId = state.projectMeta?.id ?? `project_${Date.now()}`;
   const projectMeta = {
@@ -130,6 +130,8 @@ export function buildProjectData(state, name) {
       preview_frame: state.previewFrame ?? null,
     },
     project_meta: projectMeta,
+    pdf_name: pdfFile?.name ?? null,
+    pdf_ref: pdfRef ?? null,
   };
 }
 
@@ -147,18 +149,20 @@ export function fingerprintProjectData(data) {
       name: data?.project_meta?.name ?? null,
       created_at: data?.project_meta?.created_at ?? null,
     },
+    pdf_name: data?.pdf_name ?? null,
+    pdf_ref: data?.pdf_ref ?? null,
   });
 }
 
-export function fingerprintProjectState(state, name = null) {
+export function fingerprintProjectState(state, name = null, pdfFile = null, pdfRef = null) {
   const resolvedName = name ?? state.projectMeta?.name ?? "未保存プロジェクト";
-  return fingerprintProjectData(buildProjectData(state, resolvedName));
+  return fingerprintProjectData(buildProjectData(state, resolvedName, pdfFile, pdfRef));
 }
 
-export function buildProjectPayload(state, name) {
+export function buildProjectPayload(state, name, pdfFile = null, pdfRef = null) {
   const now = new Date().toISOString();
   const projectId = state.projectMeta?.id ?? `project_${Date.now()}`;
-  const data = buildProjectData(state, name);
+  const data = buildProjectData(state, name, pdfFile, pdfRef);
   return {
     id: projectId,
     name,

@@ -25,6 +25,38 @@ class GenerateRequest(BaseModel):
     request_token: Optional[str] = None
 
 
+class SourcePdfUploadRequest(BaseModel):
+    pdf_base64: str
+    filename: str
+
+
+class KgPreviewRequest(BaseModel):
+    pdf_base64: str
+    filename: str
+    model: Optional[str] = None
+    course_name: Optional[str] = "情報科学"
+    language: Optional[str] = "Japanese"
+    project_id: Optional[str] = None
+
+
+class KgPreviewCompareRequest(BaseModel):
+    pdf_base64: str
+    filename: str
+    variant_ids: List[str] = Field(default_factory=lambda: ["raw"])
+    model: Optional[str] = None
+    course_name: Optional[str] = "情報科学"
+    language: Optional[str] = "Japanese"
+    project_id: Optional[str] = None
+
+
+class ScriptCompareGenerateRequest(BaseModel):
+    project_id: str
+    kg_result_id: str
+    mode: Literal["audio", "video", "hl"] = "audio"
+    detail: Literal["summary", "standard", "detail"] = "standard"
+    difficulty: Literal["intro", "basic", "advanced"] = "basic"
+
+
 class ExportSettings(BaseModel):
     detail: Optional[Literal["summary", "standard", "detail"]] = "standard"
     difficulty: Optional[Literal["intro", "basic", "advanced"]] = "basic"

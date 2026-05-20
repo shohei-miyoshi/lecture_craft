@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from datetime import datetime
-from typing import List
+from typing import Any, Dict, List, Optional
 import re
 
 from openai import OpenAI
@@ -11,6 +11,7 @@ from openai import OpenAI
 from .paths import ProjectPaths
 from .style_axes import resolve_level_detail
 from .deck_scan import collect_slide_images
+from .audio_only_lecture import build_chapter_kg_guidance_block
 from .gpt_utils import (
     build_responses_system_message,
     build_responses_user_message,
@@ -26,6 +27,7 @@ def build_prompt_for_slide(
     deck_scan_text: str,
     level_desc: str,
     detail_desc: str,
+    kg_guidance_block: str = "",
 ) -> str:
     """
     1スライド分のプロンプトを組み立てる。
@@ -65,6 +67,8 @@ def build_prompt_for_slide(
 全体スキャン結果（deck_scan_overview.txt）が利用できないため、
 スライド画像と直前のナレーションだけから判断して台本を作成してください。
 """.strip()
+
+    guidance_block = f"\n{kg_guidance_block}\n" if kg_guidance_block.strip() else "\n"
 
     prompt = f"""
 [Role / Goal]
@@ -109,6 +113,7 @@ def build_prompt_for_slide(
 - ナレーション本文では，説明用の括弧（ ）を原則として使わないでください。
 
 {deck_block}
+{guidance_block}
 
 {prev_block}
 
@@ -129,6 +134,7 @@ def generate_lecture_scripts(
     level: str = "L3",
     detail: str = "D2",
     recent_range: int = 1,
+    kg_guidance: Optional[Dict[str, Any]] = None,
 ) -> List[str]:
     """
     - deck_scan_overview.txt を読み込み（あれば）
@@ -194,6 +200,7 @@ def generate_lecture_scripts(
             deck_scan_text=deck_scan_text,
             level_desc=level_desc,
             detail_desc=detail_desc,
+            kg_guidance_block=build_chapter_kg_guidance_block(kg_guidance, [slide_no]),
         )
 
         # GPT 呼び出し（画像付きは Responses API に統一）
@@ -247,6 +254,7 @@ def run_lecture_script(
     level: str = "L3",
     detail: str = "D2",
     recent_range: int = 1,
+    kg_guidance: Optional[Dict[str, Any]] = None,
 ) -> List[str]:
     """
     run_all.py から呼ぶためのラッパー関数。
@@ -257,4 +265,5 @@ def run_lecture_script(
         level=level,
         detail=detail,
         recent_range=recent_range,
+        kg_guidance=kg_guidance,
     )

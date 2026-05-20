@@ -101,12 +101,14 @@ export default function ProjectHome({
   requestConfirm,
   requestPrompt,
   addToast,
+  pendingPdf,
+  setPendingPdf,
+  homeQuery,
+  homeSortKey,
+  dispatch,
 }) {
   const [refreshKey, setRefreshKey] = useState(0);
   const [draggingPdf, setDraggingPdf] = useState(false);
-  const [pendingPdf, setPendingPdf] = useState(null);
-  const [query, setQuery] = useState("");
-  const [sortKey, setSortKey] = useState("updated_desc");
   const [storedProjects, setStoredProjects] = useState([]);
   const fileInputRef = useRef(null);
   useEffect(() => {
@@ -127,19 +129,19 @@ export default function ProjectHome({
   const projects = useMemo(() => {
     const rows = storedProjects;
     const filtered = rows.filter((project) => {
-      const q = query.trim().toLowerCase();
+      const q = String(homeQuery ?? "").trim().toLowerCase();
       if (!q) return true;
       return String(project.name ?? "").toLowerCase().includes(q);
     });
     const sorted = [...filtered];
     sorted.sort((a, b) => {
-      if (sortKey === "name_asc") return String(a.name ?? "").localeCompare(String(b.name ?? ""), "ja");
-      if (sortKey === "name_desc") return String(b.name ?? "").localeCompare(String(a.name ?? ""), "ja");
-      if (sortKey === "updated_asc") return String(a.updated_at ?? "").localeCompare(String(b.updated_at ?? ""));
+      if (homeSortKey === "name_asc") return String(a.name ?? "").localeCompare(String(b.name ?? ""), "ja");
+      if (homeSortKey === "name_desc") return String(b.name ?? "").localeCompare(String(a.name ?? ""), "ja");
+      if (homeSortKey === "updated_asc") return String(a.updated_at ?? "").localeCompare(String(b.updated_at ?? ""));
       return String(b.updated_at ?? "").localeCompare(String(a.updated_at ?? ""));
     });
     return sorted;
-  }, [query, sortKey, storedProjects]);
+  }, [homeQuery, homeSortKey, storedProjects]);
   const currentData = currentProject?.data ?? null;
   const currentProjectId = currentData?.project_meta?.id ?? null;
   const currentStatus = currentData?.status ?? null;
@@ -406,8 +408,8 @@ export default function ProjectHome({
               </div>
               <div style={{ display: "flex", gap: 8, alignItems: "center", paddingBottom: 2 }}>
                 <input
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
+                  value={homeQuery}
+                  onChange={(e) => dispatch({ type: "SET", k: "homeQuery", v: e.target.value })}
                   placeholder="検索"
                   style={{
                     width: 120,
@@ -419,8 +421,8 @@ export default function ProjectHome({
                   }}
                 />
                 <select
-                  value={sortKey}
-                  onChange={(e) => setSortKey(e.target.value)}
+                  value={homeSortKey}
+                  onChange={(e) => dispatch({ type: "SET", k: "homeSortKey", v: e.target.value })}
                   style={{
                     padding: "7px 12px",
                     background: "rgba(255,255,255,.03)",

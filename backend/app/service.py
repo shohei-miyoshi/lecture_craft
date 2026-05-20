@@ -61,6 +61,7 @@ BACK_STYLE_TO_FRONT_KIND = {
 }
 SENTENCE_SPLIT_RE = re.compile(r"(?<=[。．！？!?])\s*|\n+")
 SLIDE_TEXT_COMMENT_RE = re.compile(r"^\s*#")
+SAFE_STEM_RE = re.compile(r"[^0-9A-Za-z._ぁ-んァ-ヶ一-龠-]+")
 
 
 class ApiError(Exception):
@@ -643,6 +644,38 @@ def ensure_pdf_images(material_name: str) -> List[str]:
     if img_dir.exists() and list(img_dir.glob("*.png")):
         return [str(path) for path in sorted(img_dir.glob("*.png"))]
     return pdf_to_images(str(pdf_path), str(img_dir), dpi=150)
+
+
+def _safe_pdf_stem(text: str) -> str:
+    return SAFE_STEM_RE.sub("_", str(text or "")).strip("_") or "lecture"
+
+
+def store_source_pdf(filename: str, pdf_bytes: bytes) -> Dict[str, Any]:
+    safe_stem = _safe_pdf_stem(Path(filename).stem or "lecture")
+    fingerprint = hashlib.sha256(pdf_bytes).hexdigest()
+    material_name = f"{safe_stem}_{fingerprint[:16]}.pdf"
+    ensure_pdf_upload(material_name, pdf_bytes)
+    return {
+        "material_name": material_name,
+        "filename": Path(filename).name or f"{safe_stem}.pdf",
+        "fingerprint": fingerprint,
+        "size_bytes": len(pdf_bytes),
+        "uploaded_at": datetime.now().isoformat(timespec="seconds"),
+    }
+
+
+def fetch_source_pdf(material_name: str, *, filename: str | None = None) -> FileResponse:
+    normalized = Path(str(material_name or "")).name
+    if not normalized or normalized != str(material_name or ""):
+        raise ApiError(400, "INVALID_REQUEST", "material_name is invalid")
+    pdf_path = (PDF_ROOT / normalized).resolve()
+    pdf_root = PDF_ROOT.resolve()
+    if pdf_path != pdf_root and pdf_root not in pdf_path.parents:
+        raise ApiError(400, "INVALID_REQUEST", "material_name is invalid")
+    if not pdf_path.exists() or not pdf_path.is_file():
+        raise ApiError(404, "SOURCE_PDF_NOT_FOUND", "source pdf not found")
+    download_name = Path(str(filename or normalized)).name or normalized
+    return FileResponse(pdf_path, media_type="application/pdf", filename=download_name)
 
 
 def ensure_audio_tts(script_path: Path, paths: ProjectPaths) -> Path:

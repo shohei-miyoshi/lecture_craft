@@ -90,6 +90,181 @@ def ensure_audio_only_dir(paths: ProjectPaths) -> Path:
     return base_dir
 
 
+def _normalize_kg_nodes(kg_guidance: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    if not isinstance(kg_guidance, dict):
+        return []
+    structured = kg_guidance.get("structured") if isinstance(kg_guidance.get("structured"), dict) else {}
+    nodes = structured.get("nodes") if isinstance(structured.get("nodes"), list) else []
+    if nodes:
+        return [row for row in nodes if isinstance(row, dict) and str(row.get("id") or "").strip()]
+    graph = kg_guidance.get("graph") if isinstance(kg_guidance.get("graph"), dict) else {}
+    fallback = graph.get("nodes") if isinstance(graph.get("nodes"), list) else []
+    return [row for row in fallback if isinstance(row, dict) and str(row.get("id") or "").strip()]
+
+
+def _normalize_kg_edges(kg_guidance: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    if not isinstance(kg_guidance, dict):
+        return []
+    structured = kg_guidance.get("structured") if isinstance(kg_guidance.get("structured"), dict) else {}
+    edges = structured.get("edges") if isinstance(structured.get("edges"), list) else []
+    if edges:
+        return [
+            row
+            for row in edges
+            if isinstance(row, dict) and str(row.get("source") or "").strip() and str(row.get("target") or "").strip()
+        ]
+    triplets = kg_guidance.get("triplets") if isinstance(kg_guidance.get("triplets"), list) else []
+    if triplets:
+        rows = []
+        for row in triplets:
+            if not isinstance(row, dict):
+                continue
+            source = str(row.get("source") or row.get("prerequisite") or "").strip()
+            target = str(row.get("target") or row.get("dependent") or "").strip()
+            relation = str(row.get("relation") or "Is-a-Prerequisite-of").strip() or "Is-a-Prerequisite-of"
+            if not source or not target:
+                continue
+            rows.append({"source": source, "target": target, "relation": relation, "slide_refs": [], "evidence_text": []})
+        return rows
+    graph = kg_guidance.get("graph") if isinstance(kg_guidance.get("graph"), dict) else {}
+    fallback = graph.get("edges") if isinstance(graph.get("edges"), list) else []
+    return [
+        row
+        for row in fallback
+        if isinstance(row, dict) and str(row.get("source") or "").strip() and str(row.get("target") or "").strip()
+    ]
+
+
+def _sort_kg_nodes_for_prompt(nodes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    return sorted(
+        nodes,
+        key=lambda row: (
+            -(int(row.get("importance") or 0)),
+            len(row.get("slide_refs") or []),
+            str(row.get("id") or ""),
+        ),
+    )
+
+
+def _format_slide_refs(slide_refs: Any) -> str:
+    rows = []
+    for value in slide_refs or []:
+        try:
+            rows.append(str(int(value)))
+        except Exception:
+            continue
+    return ", ".join(rows) if rows else "—"
+
+
+def build_outline_kg_guidance_block(kg_guidance: Optional[Dict[str, Any]]) -> str:
+    nodes = _sort_kg_nodes_for_prompt(_normalize_kg_nodes(kg_guidance))[:8]
+    edges = _normalize_kg_edges(kg_guidance)[:10]
+    if not nodes and not edges:
+        return ""
+
+    node_lines = []
+    for row in nodes:
+        node_id = str(row.get("id") or "").strip()
+        if not node_id:
+            continue
+        importance = row.get("importance")
+        slide_refs = _format_slide_refs(row.get("slide_refs"))
+        evidence = " / ".join([str(text).strip() for text in (row.get("evidence_text") or []) if str(text).strip()][:2]) or "—"
+        node_lines.append(f"- {node_id} (importance={importance if importance is not None else '—'}, slides={slide_refs}, evidence={evidence})")
+
+    edge_lines = []
+    for row in edges:
+        source = str(row.get("source") or "").strip()
+        target = str(row.get("target") or "").strip()
+        relation = str(row.get("relation") or "Is-a-Prerequisite-of").strip() or "Is-a-Prerequisite-of"
+        if not source or not target:
+            continue
+        slide_refs = _format_slide_refs(row.get("slide_refs"))
+        edge_lines.append(f"- {source} --{relation}--> {target} (slides={slide_refs})")
+
+    parts = [
+        "[Knowledge Graph Guidance]",
+        "以下は同じスライド群から抽出した KG の要約です。内容を新たに発明するためではなく、重要概念や説明順を整理するヒントとしてのみ使ってください。",
+        "KG をもとに、重要になりそうな単語については、聞き手が理解しやすいよう説明を少し詳しくしてください。",
+    ]
+    if node_lines:
+        parts.append("[重要概念]")
+        parts.extend(node_lines)
+    if edge_lines:
+        parts.append("[主な概念関係]")
+        parts.extend(edge_lines)
+        parts.append("章立てでは、従属する概念より前提となる概念を先に置けるなら優先してください。")
+    return "\n".join(parts)
+
+
+def build_chapter_kg_guidance_block(kg_guidance: Optional[Dict[str, Any]], target_slides: List[Any]) -> str:
+    nodes = _normalize_kg_nodes(kg_guidance)
+    edges = _normalize_kg_edges(kg_guidance)
+    if not nodes and not edges:
+        return ""
+
+    target_set = set()
+    for value in target_slides or []:
+        try:
+            target_set.add(int(value))
+        except Exception:
+            continue
+
+    def is_relevant_row(row: Dict[str, Any]) -> bool:
+        refs = []
+        for value in row.get("slide_refs") or []:
+            try:
+                refs.append(int(value))
+            except Exception:
+                continue
+        if not target_set:
+            return True
+        if refs:
+            return bool(target_set.intersection(refs))
+        return False
+
+    relevant_nodes = [row for row in _sort_kg_nodes_for_prompt(nodes) if is_relevant_row(row)][:6]
+    relevant_node_ids = {str(row.get("id") or "").strip() for row in relevant_nodes}
+    relevant_edges = []
+    for row in edges:
+        source = str(row.get("source") or "").strip()
+        target = str(row.get("target") or "").strip()
+        if not source or not target:
+            continue
+        if is_relevant_row(row) or source in relevant_node_ids or target in relevant_node_ids:
+            relevant_edges.append(row)
+    relevant_edges = relevant_edges[:8]
+
+    if not relevant_nodes and not relevant_edges:
+        return ""
+
+    parts = [
+        "[Knowledge Graph Guidance for this chapter]",
+        "以下は、この章の target_slides に関係する KG の要約です。スライドに書かれていない話題を足すためではなく、説明の重点と順序を整えるヒントとして使ってください。",
+        "KG をもとに、この章で重要になりそうな単語については、聞き手が理解しやすいよう説明を少し詳しくしてください。",
+    ]
+    if relevant_nodes:
+        parts.append("[関連概念]")
+        for row in relevant_nodes:
+            node_id = str(row.get("id") or "").strip()
+            if not node_id:
+                continue
+            importance = row.get("importance")
+            evidence = " / ".join([str(text).strip() for text in (row.get("evidence_text") or []) if str(text).strip()][:2]) or "—"
+            parts.append(f"- {node_id} (importance={importance if importance is not None else '—'}, evidence={evidence})")
+    if relevant_edges:
+        parts.append("[関連する概念関係]")
+        for row in relevant_edges:
+            source = str(row.get("source") or "").strip()
+            target = str(row.get("target") or "").strip()
+            relation = str(row.get("relation") or "Is-a-Prerequisite-of").strip() or "Is-a-Prerequisite-of"
+            if not source or not target:
+                continue
+            parts.append(f"- {source} --{relation}--> {target}")
+        parts.append("可能であれば、従属する概念を説明する前に、その前提や土台となる概念に短く触れてください。")
+    return "\n".join(parts)
+
+
 # ============================================================
 #  GPT-5 用ヘルパー（Responses API 専用）
 # ============================================================
@@ -414,6 +589,8 @@ OUTLINE_PROMPT = """
 - 画像の並びは「1枚目 = スライド1, 2枚目 = スライド2, …」です。
 - 章立てを考えるときは、「どのスライドをどの章で扱うか」を意識してください。
 
+{kg_guidance_block}
+
 [タスク]
 - スライドに書かれている内容だけに基づいて、
   音声のみの講義として自然な「章立て」を設計してください。
@@ -503,6 +680,8 @@ NARRATION_PROMPT_TEMPLATE = """
 - あなたには、この章の target_slides に対応するスライド画像も同時に渡されています。
 - 画像の並びは「1枚目 = target_slides の先頭のスライド、2枚目 = 2番目のスライド、…」です。
 - 説明の中心は、必ずこれらのスライドに実際に書かれている内容・図・例としてください。
+
+{kg_guidance_block}
 
 [出力スタイル]
 - モード: 講義ナレーション
@@ -761,6 +940,7 @@ def step_generate_outline(
     materials_all_path: Path,
     audio_only_dir: Path,
     img_paths: List[str],
+    kg_guidance: Optional[Dict[str, Any]] = None,
     model_name: Optional[str] = None,
 ) -> OutlineResult:
     """
@@ -772,6 +952,7 @@ def step_generate_outline(
     user_content = OUTLINE_PROMPT.format(
         materials_text=materials_text,
         num_slides=len(img_paths),
+        kg_guidance_block=build_outline_kg_guidance_block(kg_guidance),
     )
 
     messages = [
@@ -863,6 +1044,7 @@ def step_generate_narration(
     outline_json: Dict[str, Any],
     audio_only_dir: Path,
     img_paths: List[str],
+    kg_guidance: Optional[Dict[str, Any]] = None,
     model_name: Optional[str] = None,
 ) -> Path:
     """
@@ -937,6 +1119,7 @@ def step_generate_narration(
             chapter_title=ctitle,
             chapter_summary=csummary,
             target_slides_str=str(target_slides),
+            kg_guidance_block=build_chapter_kg_guidance_block(kg_guidance, target_slides),
         )
 
         messages = [

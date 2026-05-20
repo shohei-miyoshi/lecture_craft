@@ -6,7 +6,8 @@ import { findHighlightForSentence, getSlideHighlights } from "../utils/highlight
  *
  * 上部にエディタ/書き出しタブを配置
  */
-export default function RightPanel({ state, dispatch, addToast, requestConfirm, tab, setTab, rightContent }) {
+export default function RightPanel({ state, dispatch, pdfFile, addToast, requestConfirm, tab, setTab, rightContent }) {
+  const activeTab = tab === "export" ? "export" : "editor";
   const isAudio  = state.appMode === "audio";
   const curSents = isAudio
     ? state.sents
@@ -35,12 +36,12 @@ export default function RightPanel({ state, dispatch, addToast, requestConfirm, 
 
       {/* ── タブ ── */}
       <div style={{ display: "flex", alignItems: "flex-end", borderBottom: "1px solid rgba(255,255,255,.05)", background: "transparent", flexShrink: 0, padding: "6px 8px 0 8px", gap: 4 }}>
-        <button onClick={() => setTab("editor")} style={tabSty(tab === "editor")}>エディタ</button>
-        <button onClick={() => setTab("export")} style={tabSty(tab === "export")}>書き出し</button>
+        <button onClick={() => setTab("editor")} style={tabSty(activeTab === "editor")}>エディタ</button>
+        <button onClick={() => setTab("export")} style={tabSty(activeTab === "export")}>書き出し</button>
       </div>
 
       {/* ── エディタタブ ── */}
-      {tab === "editor" && (
+      {activeTab === "editor" && (
         <>
           <div style={{ padding: "12px 14px 10px", borderBottom: "1px solid rgba(255,255,255,.05)", flexShrink: 0, background: "linear-gradient(180deg, rgba(255,255,255,.02), transparent)" }}>
             <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8, marginBottom: 4, flexWrap: "wrap" }}>
@@ -94,7 +95,7 @@ export default function RightPanel({ state, dispatch, addToast, requestConfirm, 
       )}
 
       {/* ── 書き出しタブ ── */}
-      {tab === "export" && rightContent}
+      {activeTab === "export" && rightContent}
     </aside>
   );
 }

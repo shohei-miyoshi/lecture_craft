@@ -46,6 +46,43 @@ export default function LeftPanel({
 
   const generationLocked = state.status === "proc";
   const modeLocked = state.generated || generationLocked;
+  const hasSavedProject = Boolean(state.projectMeta?.id);
+  const projectSaveState = !hasSavedProject
+    ? "unsaved_project"
+    : isDirty
+      ? "dirty"
+      : "saved";
+  const saveBadgePalette = projectSaveState === "saved"
+    ? {
+        text: "保存済み",
+        color: "var(--gr)",
+        bg: "var(--gd)",
+        border: "rgba(76,175,130,.28)",
+        dot: "var(--gr)",
+        shadow: "0 0 0 4px rgba(76,175,130,.12)",
+      }
+    : projectSaveState === "dirty"
+      ? {
+          text: "変更あり",
+          color: "var(--am)",
+          bg: "var(--amd)",
+          border: "rgba(232,169,75,.28)",
+          dot: "var(--am)",
+          shadow: "0 0 0 4px rgba(232,169,75,.12)",
+        }
+      : {
+          text: "未保存",
+          color: "var(--tm)",
+          bg: "rgba(255,255,255,.04)",
+          border: "rgba(255,255,255,.1)",
+          dot: "var(--tm)",
+          shadow: "0 0 0 4px rgba(255,255,255,.08)",
+        };
+  const projectStatusLine = !hasSavedProject
+    ? "まだプロジェクトとして保存していません"
+    : isDirty
+      ? "保存後の変更があります"
+      : "保存済みの状態です";
 
   const isRunActive = (runId, scopeId) => (
     pollRunRef.current === runId && scopeRef.current === scopeId
@@ -137,6 +174,14 @@ export default function LeftPanel({
     }
     if (!f || f.type !== "application/pdf") return;
     setPdfFile(f);
+    dispatch({ type: "SET", k: "kgComparisonResults", v: [] });
+    dispatch({ type: "SET", k: "kgSelectedResultIds", v: [] });
+    dispatch({ type: "SET", k: "kgCatalog", v: [] });
+    dispatch({ type: "SET", k: "kgCatalogOpen", v: false });
+    dispatch({ type: "SET", k: "kgCatalogSelection", v: [] });
+    dispatch({ type: "SET", k: "kgCatalogBusy", v: false });
+    dispatch({ type: "SET", k: "kgError", v: null });
+    dispatch({ type: "SET", k: "kgBusy", v: false });
     dispatch({ type: "APP_LOG", message: `PDFを選択しました（file=${f.name}, size=${f.size}bytes）`, meta: { type: "pdf_select", filename: f.name, size: f.size } });
     addToast("in", `📑 ${f.name}`);
   };
@@ -283,20 +328,20 @@ export default function LeftPanel({
             >
               保存
             </button>
-            <div style={{ fontSize: 9, color: isDirty ? "var(--am)" : "var(--gr)", background: isDirty ? "var(--amd)" : "var(--gd)", border: `1px solid ${isDirty ? "rgba(232,169,75,.28)" : "rgba(76,175,130,.28)"}`, borderRadius: 999, padding: "2px 8px", whiteSpace: "nowrap" }}>
-              {isDirty ? "未保存" : "保存済み"}
+            <div style={{ fontSize: 9, color: saveBadgePalette.color, background: saveBadgePalette.bg, border: `1px solid ${saveBadgePalette.border}`, borderRadius: 999, padding: "2px 8px", whiteSpace: "nowrap" }}>
+              {saveBadgePalette.text}
             </div>
           </div>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
             <div>
               <div style={{ fontSize: 10, color: "var(--ts)", marginBottom: 2 }}>
-                現在: {state.projectMeta?.name ?? "未保存"}
+                現在: {state.projectMeta?.name ?? "未保存プロジェクト"}
               </div>
               <div style={{ fontSize: 9, color: "var(--tm)" }}>
-                {isDirty ? "未保存の変更があります" : "保存済みの状態です"}
+                {projectStatusLine}
               </div>
             </div>
-            <div style={{ width: 10, height: 10, borderRadius: 999, background: isDirty ? "var(--am)" : "var(--gr)", boxShadow: isDirty ? "0 0 0 4px rgba(232,169,75,.12)" : "0 0 0 4px rgba(76,175,130,.12)" }} />
+            <div style={{ width: 10, height: 10, borderRadius: 999, background: saveBadgePalette.dot, boxShadow: saveBadgePalette.shadow }} />
           </div>
         </div>
 
@@ -363,6 +408,14 @@ export default function LeftPanel({
                   return;
                 }
                 setPdfFile(null);
+                dispatch({ type: "SET", k: "kgComparisonResults", v: [] });
+                dispatch({ type: "SET", k: "kgSelectedResultIds", v: [] });
+                dispatch({ type: "SET", k: "kgCatalog", v: [] });
+                dispatch({ type: "SET", k: "kgCatalogOpen", v: false });
+                dispatch({ type: "SET", k: "kgCatalogSelection", v: [] });
+                dispatch({ type: "SET", k: "kgCatalogBusy", v: false });
+                dispatch({ type: "SET", k: "kgError", v: null });
+                dispatch({ type: "SET", k: "kgBusy", v: false });
               }}
               style={{ padding: "3px 7px", border: "1px solid var(--bd2)", borderRadius: "var(--r)", background: "rgba(19,21,26,.68)", color: "var(--tp)", fontSize: 10 }}
             >

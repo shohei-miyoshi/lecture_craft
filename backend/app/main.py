@@ -12,19 +12,35 @@ from fastapi.responses import JSONResponse
 from .admin import build_admin_overview
 from .db import init_db
 from .jobs import get_job_manager
+from .kg_preview_service import (
+    get_kg_preview_result,
+    list_kg_preview_results,
+    list_kg_variants,
+    render_kg_preview,
+    render_kg_preview_compare,
+)
 from .models import (
     AuthCredentialsRequest,
     ExperimentJoinRequest,
     ExportRequest,
     GenerateRequest,
+    KgPreviewCompareRequest,
+    KgPreviewRequest,
     LayoutReviewRequest,
     ProjectEventsRequest,
     ProjectPatchRequest,
     ProjectUpsertRequest,
     ResearchSessionRequest,
     ReviewSettingsPatchRequest,
+    ScriptCompareGenerateRequest,
     ScriptReviewRequest,
+    SourcePdfUploadRequest,
     WorkspaceDraftRequest,
+)
+from .script_compare_service import (
+    get_script_compare_result,
+    list_script_compare_results,
+    render_script_compare,
 )
 from .persistence import (
     create_guest_session,
@@ -47,7 +63,16 @@ from .persistence import (
     save_workspace_draft_for_user,
     upsert_review_settings,
 )
-from .service import ApiError, export_media, export_preview_audio_source, render_preview_audio, save_research_session
+from .cache import decode_pdf_base64
+from .service import (
+    ApiError,
+    export_media,
+    export_preview_audio_source,
+    fetch_source_pdf,
+    render_preview_audio,
+    save_research_session,
+    store_source_pdf,
+)
 
 
 app = FastAPI(title="LectureCraft Backend API")
@@ -233,6 +258,22 @@ def workspace_delete_endpoint(
     )
 
 
+@app.post("/api/source-pdfs")
+def source_pdf_upload_endpoint(req: SourcePdfUploadRequest, x_kenkyu_session: str | None = Header(default=None)):
+    _require_session(x_kenkyu_session)
+    try:
+        pdf_bytes = decode_pdf_base64(req.pdf_base64)
+    except ValueError as exc:
+        raise ApiError(400, "INVALID_PDF", str(exc)) from exc
+    return {"ok": True, "pdf_ref": store_source_pdf(req.filename, pdf_bytes)}
+
+
+@app.get("/api/source-pdfs/{material_name}")
+def source_pdf_get_endpoint(material_name: str, filename: str | None = None, x_kenkyu_session: str | None = Header(default=None)):
+    _require_session(x_kenkyu_session)
+    return fetch_source_pdf(material_name, filename=filename)
+
+
 @app.post("/api/projects/{project_id}/events")
 def project_events_endpoint(project_id: str, req: ProjectEventsRequest, x_kenkyu_session: str | None = Header(default=None)):
     session = _require_session(x_kenkyu_session)
@@ -289,6 +330,99 @@ def review_state_endpoint(project_id: str, x_kenkyu_session: str | None = Header
 @app.post("/api/generate")
 def generate_endpoint(req: GenerateRequest):
     return JSONResponse(status_code=202, content=get_job_manager().submit_generate(req))
+
+
+@app.post("/api/kg-preview")
+def kg_preview_endpoint(req: KgPreviewRequest):
+    return render_kg_preview(req)
+
+
+@app.get("/api/kg-preview/variants")
+def kg_preview_variants_endpoint():
+    return list_kg_variants()
+
+
+@app.post("/api/kg-preview/compare")
+def kg_preview_compare_endpoint(req: KgPreviewCompareRequest, x_kenkyu_session: str | None = Header(default=None)):
+    session = _require_session(x_kenkyu_session)
+    if req.project_id:
+        get_project_for_user(req.project_id, session["user"]["id"])
+    return render_kg_preview_compare(req, owner_user_id=session["user"]["id"])
+
+
+@app.post("/api/script-compare/generate")
+def script_compare_generate_endpoint(req: ScriptCompareGenerateRequest, x_kenkyu_session: str | None = Header(default=None)):
+    session = _require_session(x_kenkyu_session)
+    project = get_project_for_user(req.project_id, session["user"]["id"])
+    return render_script_compare(
+        project_id=req.project_id,
+        project_data=project.get("data") or {},
+        kg_result_id=req.kg_result_id,
+        mode=req.mode,
+        detail=req.detail,
+        difficulty=req.difficulty,
+        owner_user_id=session["user"]["id"],
+    )
+
+
+@app.get("/api/script-compare/results")
+def script_compare_results_endpoint(
+    project_id: str,
+    limit: int = 24,
+    x_kenkyu_session: str | None = Header(default=None),
+):
+    session = _require_session(x_kenkyu_session)
+    get_project_for_user(project_id, session["user"]["id"])
+    return list_script_compare_results(
+        user_id=session["user"]["id"],
+        project_id=project_id,
+        limit=limit,
+    )
+
+
+@app.get("/api/script-compare/results/{compare_id}")
+def script_compare_result_endpoint(
+    compare_id: str,
+    project_id: str,
+    x_kenkyu_session: str | None = Header(default=None),
+):
+    session = _require_session(x_kenkyu_session)
+    get_project_for_user(project_id, session["user"]["id"])
+    return get_script_compare_result(
+        compare_id,
+        user_id=session["user"]["id"],
+        project_id=project_id,
+    )
+
+
+@app.get("/api/kg-preview/results")
+def kg_preview_results_endpoint(
+    x_kenkyu_session: str | None = Header(default=None),
+    project_id: str | None = None,
+    filename: str | None = None,
+    material_fingerprint: str | None = None,
+    variant_id: str | None = None,
+    limit: int = 24,
+):
+    session = _require_session(x_kenkyu_session)
+    if project_id:
+        get_project_for_user(project_id, session["user"]["id"])
+    return list_kg_preview_results(
+        user_id=session["user"]["id"],
+        project_id=project_id,
+        filename=filename,
+        material_fingerprint=material_fingerprint,
+        variant_id=variant_id,
+        limit=limit,
+    )
+
+
+@app.get("/api/kg-preview/results/{result_id}")
+def kg_preview_result_endpoint(result_id: str, project_id: str | None = None, x_kenkyu_session: str | None = Header(default=None)):
+    session = _require_session(x_kenkyu_session)
+    if project_id:
+        get_project_for_user(project_id, session["user"]["id"])
+    return get_kg_preview_result(result_id, user_id=session["user"]["id"], project_id=project_id)
 
 
 @app.get("/api/jobs/{job_id}")

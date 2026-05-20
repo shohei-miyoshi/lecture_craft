@@ -14,8 +14,11 @@ import RightPanel    from "./components/RightPanel.jsx";
 import ExportPanel   from "./components/ExportPanel.jsx";
 import AdminDashboard from "./components/AdminDashboard.jsx";
 import ProjectHome from "./components/ProjectHome.jsx";
+import KgComparePage from "./components/KgComparePage.jsx";
+import ScriptComparePage from "./components/ScriptComparePage.jsx";
 import AuthScreen from "./components/AuthScreen.jsx";
 import { buildProjectPayload, fingerprintProjectData, fingerprintProjectState, saveProject } from "./utils/projectStore.js";
+import { extractPdfRefFromData, normalizePdfRef, restoreSourcePdf, uploadSourcePdf } from "./utils/pdfStore.js";
 import { fetchCurrentSession, logoutUser } from "./utils/sessionStore.js";
 import { API_URL } from "./utils/constants.js";
 import {
@@ -35,7 +38,20 @@ function parseRouteFromHash(hashValue) {
   if (hashValue === "#editor") {
     return { view: "studio", studioScreen: "editor" };
   }
+  if (hashValue === "#kg-compare") {
+    return { view: "studio", studioScreen: "kg_compare" };
+  }
+  if (hashValue === "#script-compare") {
+    return { view: "studio", studioScreen: "script_compare" };
+  }
   return { view: "studio", studioScreen: "home" };
+}
+
+function studioHashForScreen(screen) {
+  if (screen === "editor") return "#editor";
+  if (screen === "kg_compare") return "#kg-compare";
+  if (screen === "script_compare") return "#script-compare";
+  return "";
 }
 
 function createWorkspaceScopeId() {
@@ -70,6 +86,7 @@ export default function App() {
   const initialRoute = parseRouteFromHash(window.location.hash);
   const [state, dispatch]         = useReducer(reducer, INITIAL_STATE);
   const [pdfFile, setPdfFile]     = useState(null);
+  const [pdfRef, setPdfRef]       = useState(null);
   const [tab, setTab]             = useState("editor");
   const [view, setView]           = useState(initialRoute.view);
   const [studioScreen, setStudioScreen] = useState(initialRoute.studioScreen);
@@ -77,6 +94,7 @@ export default function App() {
   const [authSession, setAuthSession] = useState(null);
   const [workspaceReady, setWorkspaceReady] = useState(false);
   const [workspaceScopeId, setWorkspaceScopeId] = useState(() => createWorkspaceScopeId());
+  const [homePendingPdf, setHomePendingPdf] = useState(null);
   const { toasts, addToast }      = useToast();
   const { confirmProps, requestConfirm, requestPrompt } = useConfirm();
   const { layout, startResizeLeft, startResizeRight, resizingLeft, resizingRight, resetLayout } = useResizableLayout();
@@ -89,24 +107,27 @@ export default function App() {
   const workspaceScopeIdRef = useRef(workspaceScopeId);
   const latestStateRef = useRef(state);
   const latestPdfFileRef = useRef(pdfFile);
+  const latestPdfRefRef = useRef(pdfRef);
+  const pdfUploadSeqRef = useRef(0);
+  const pdfRestoreSeqRef = useRef(0);
   const isDirty = hasPersistableWorkspace(state)
-    && (!state.savedFingerprint || fingerprintProjectState(state, state.projectMeta?.name) !== state.savedFingerprint);
-  const currentWorkspaceData = (hasPersistableWorkspace(state) || Boolean(pdfFile))
-    ? buildWorkspaceDraftDataWithMeta(state, pdfFile, {
+    && (!state.savedFingerprint || fingerprintProjectState(state, state.projectMeta?.name, pdfFile, pdfRef) !== state.savedFingerprint);
+  const currentWorkspaceData = (hasPersistableWorkspace(state) || Boolean(pdfFile) || Boolean(pdfRef))
+    ? buildWorkspaceDraftDataWithMeta(state, pdfFile, pdfRef, {
         scopeId: workspaceScopeId,
         revision: workspaceRevisionRef.current,
       })
     : null;
   const currentWorkspace = currentWorkspaceData
     ? {
-        name: state.projectMeta?.name ?? pdfFile?.name?.replace(/\.pdf$/i, "") ?? "編集中のプロジェクト",
+        name: state.projectMeta?.name ?? pdfFile?.name?.replace(/\.pdf$/i, "") ?? pdfRef?.filename?.replace(/\.pdf$/i, "") ?? "編集中のプロジェクト",
         data: currentWorkspaceData,
       }
     : null;
   const isAdmin = authSession?.user?.role === "admin";
-  const workspaceDraftFingerprint = hasPersistableWorkspace(state)
+  const workspaceDraftFingerprint = (hasPersistableWorkspace(state) || Boolean(pdfFile) || Boolean(pdfRef))
     ? fingerprintWorkspaceData(
-        buildWorkspaceDraftDataWithMeta(state, pdfFile, {
+        buildWorkspaceDraftDataWithMeta(state, pdfFile, pdfRef, {
           scopeId: workspaceScopeId,
           revision: 0,
         }),
@@ -125,14 +146,96 @@ export default function App() {
     return nextScopeId;
   };
 
-  const fingerprintCurrentWorkspace = (nextState = latestStateRef.current, nextPdfFile = latestPdfFileRef.current) => {
-    if (!hasPersistableWorkspace(nextState)) return null;
+  const fingerprintCurrentWorkspace = (
+    nextState = latestStateRef.current,
+    nextPdfFile = latestPdfFileRef.current,
+    nextPdfRef = latestPdfRefRef.current,
+  ) => {
+    if (!hasPersistableWorkspace(nextState) && !nextPdfFile && !nextPdfRef) return null;
     return fingerprintWorkspaceData(
-      buildWorkspaceDraftDataWithMeta(nextState, nextPdfFile, {
+      buildWorkspaceDraftDataWithMeta(nextState, nextPdfFile, nextPdfRef, {
         scopeId: workspaceScopeIdRef.current,
         revision: 0,
       }),
     );
+  };
+
+  const clearPdfSelection = () => {
+    pdfUploadSeqRef.current += 1;
+    pdfRestoreSeqRef.current += 1;
+    latestPdfFileRef.current = null;
+    latestPdfRefRef.current = null;
+    setPdfFile(null);
+    setPdfRef(null);
+  };
+
+  const persistPdfSelection = async (file, { silent = false } = {}) => {
+    if (!file) {
+      clearPdfSelection();
+      return null;
+    }
+    const uploadSeq = ++pdfUploadSeqRef.current;
+    latestPdfFileRef.current = file;
+    setPdfFile(file);
+    try {
+      const nextPdfRef = normalizePdfRef(await uploadSourcePdf(file));
+      if (pdfUploadSeqRef.current !== uploadSeq) return nextPdfRef;
+      latestPdfRefRef.current = nextPdfRef;
+      setPdfRef(nextPdfRef);
+      if (!silent) addToast("ok", `PDF を保持しました: ${file.name}`);
+      return nextPdfRef;
+    } catch (error) {
+      if (pdfUploadSeqRef.current === uploadSeq) {
+        latestPdfRefRef.current = null;
+        setPdfRef(null);
+        if (!silent) {
+          console.warn("Failed to persist source PDF:", error);
+          addToast("er", `PDF の保存に失敗しました: ${file.name}`);
+        }
+      }
+      throw error;
+    }
+  };
+
+  const restorePdfSelectionFromData = async (data, { silent = true } = {}) => {
+    const nextPdfRef = normalizePdfRef(extractPdfRefFromData(data));
+    const restoreSeq = ++pdfRestoreSeqRef.current;
+    pdfUploadSeqRef.current = restoreSeq;
+    latestPdfRefRef.current = nextPdfRef;
+    setPdfRef(nextPdfRef);
+    if (!nextPdfRef) {
+      latestPdfFileRef.current = null;
+      setPdfFile(null);
+      return null;
+    }
+    try {
+      const restoredFile = await restoreSourcePdf(nextPdfRef);
+      if (pdfRestoreSeqRef.current !== restoreSeq) return restoredFile;
+      latestPdfFileRef.current = restoredFile;
+      setPdfFile(restoredFile);
+      return restoredFile;
+    } catch (error) {
+      if (pdfRestoreSeqRef.current === restoreSeq) {
+        latestPdfFileRef.current = null;
+        setPdfFile(null);
+        console.warn("Failed to restore source PDF:", error);
+        if (!silent) {
+          addToast("er", `保存済み PDF を復元できませんでした: ${nextPdfRef.filename}`);
+        }
+      }
+      return null;
+    }
+  };
+
+  const handlePdfSelected = (file) => {
+    if (!file) {
+      clearPdfSelection();
+      return;
+    }
+    void persistPdfSelection(file, { silent: true }).catch((error) => {
+      console.warn("Failed to persist source PDF:", error);
+      addToast("er", `PDF の保持に失敗しました: ${file.name}`);
+    });
   };
 
   const dropWorkspaceDraft = async ({ rotateScope = true } = {}) => {
@@ -156,13 +259,21 @@ export default function App() {
     }
   };
 
-  const fingerprintProjectSnapshot = (sourceState, name, projectMeta = sourceState.projectMeta ?? null) => {
+  const fingerprintProjectSnapshot = (
+    sourceState,
+    name,
+    projectMeta = sourceState.projectMeta ?? null,
+    sourcePdfFile = latestPdfFileRef.current,
+    sourcePdfRef = latestPdfRefRef.current,
+  ) => {
     const payload = buildProjectPayload(
       {
         ...sourceState,
         projectMeta,
       },
       name,
+      sourcePdfFile,
+      sourcePdfRef,
     );
     return fingerprintProjectData(payload.data);
   };
@@ -174,6 +285,10 @@ export default function App() {
   useEffect(() => {
     latestPdfFileRef.current = pdfFile;
   }, [pdfFile]);
+
+  useEffect(() => {
+    latestPdfRefRef.current = pdfRef;
+  }, [pdfRef]);
 
   useEffect(() => {
     workspaceScopeIdRef.current = workspaceScopeId;
@@ -210,6 +325,7 @@ export default function App() {
       workspaceSaveSeqRef.current += 1;
       workspaceRevisionRef.current = 0;
       rotateWorkspaceScope();
+      clearPdfSelection();
       setWorkspaceReady(false);
       return;
     }
@@ -221,7 +337,7 @@ export default function App() {
     let active = true;
     workspaceHydratingRef.current = true;
     loadWorkspaceDraft()
-      .then((draft) => {
+      .then(async (draft) => {
         if (!active) return;
         const restoredScopeId = draft?.workspace_id ?? draft?.data?.workspace_meta?.scope_id ?? createWorkspaceScopeId();
         workspaceScopeIdRef.current = restoredScopeId;
@@ -229,8 +345,10 @@ export default function App() {
         workspaceRevisionRef.current = Number(draft?.revision ?? draft?.data?.workspace_meta?.revision ?? 0) || 0;
         if (draft?.data && isHydratableWorkspaceDraft(draft.data)) {
           dispatch({ type: "LOAD", d: draft.data });
+          await restorePdfSelectionFromData(draft.data, { silent: true });
           lastWorkspaceFingerprintRef.current = fingerprintWorkspaceData(draft.data);
         } else {
+          clearPdfSelection();
           lastWorkspaceFingerprintRef.current = null;
         }
         setWorkspaceReady(true);
@@ -263,11 +381,12 @@ export default function App() {
       if (workspaceMutationEpochRef.current !== mutationEpoch) return;
       const draftState = latestStateRef.current;
       const draftPdfFile = latestPdfFileRef.current;
-      const fingerprint = fingerprintCurrentWorkspace(draftState, draftPdfFile);
+      const draftPdfRef = latestPdfRefRef.current;
+      const fingerprint = fingerprintCurrentWorkspace(draftState, draftPdfFile, draftPdfRef);
       if (!fingerprint) return;
       if (fingerprint === lastWorkspaceFingerprintRef.current) return;
       const revision = issueWorkspaceRevision();
-      const draftData = buildWorkspaceDraftDataWithMeta(draftState, draftPdfFile, {
+      const draftData = buildWorkspaceDraftDataWithMeta(draftState, draftPdfFile, draftPdfRef, {
         scopeId: workspaceScopeIdRef.current,
         revision,
       });
@@ -290,18 +409,26 @@ export default function App() {
         workspaceAutosaveTimerRef.current = null;
       }
     };
-  }, [authSession?.user?.id, workspaceDraftFingerprint, workspaceReady, pdfFile]);
+  }, [authSession?.user?.id, workspaceDraftFingerprint, workspaceReady, pdfFile, pdfRef]);
 
   const setStudioRoute = (nextScreen, historyMode = "push") => {
-    const nextHash = nextScreen === "editor" ? "#editor" : "";
+    const nextHash = studioHashForScreen(nextScreen);
     setView("studio");
     setStudioScreen(nextScreen);
+    if (nextScreen !== "editor" || studioScreen === "kg_compare" || studioScreen === "script_compare") {
+      setTab("editor");
+    }
     if (historyMode === "replace") {
       window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}${nextHash}`);
     } else if (window.location.hash !== nextHash) {
       window.history.pushState(null, "", `${window.location.pathname}${window.location.search}${nextHash}`);
     }
   };
+
+  useEffect(() => {
+    if (tab === "editor" || tab === "export") return;
+    setTab("editor");
+  }, [tab]);
 
   const setAdminRoute = (historyMode = "push") => {
     setView("admin");
@@ -315,15 +442,22 @@ export default function App() {
   const persistProject = async (forcedName = null) => {
     const snapshotState = latestStateRef.current;
     const snapshotPdfFile = latestPdfFileRef.current;
+    let snapshotPdfRef = latestPdfRefRef.current;
+    if (snapshotPdfFile && !snapshotPdfRef) {
+      snapshotPdfRef = await persistPdfSelection(snapshotPdfFile, { silent: true });
+      if (!snapshotPdfRef) {
+        throw new Error("PDF を保持できなかったため保存を続行できません");
+      }
+    }
     const name = forcedName ?? snapshotState.projectMeta?.name ?? snapshotPdfFile?.name?.replace(/\.pdf$/i, "") ?? "新しいプロジェクト";
-    const payload = buildProjectPayload(snapshotState, name);
+    const payload = buildProjectPayload(snapshotState, name, snapshotPdfFile, snapshotPdfRef);
     try {
       const saved = await saveProject(payload);
       const nextMeta = saved?.project_meta ?? saved?.data?.project_meta ?? payload.data.project_meta;
-      const submittedFingerprint = fingerprintProjectSnapshot(snapshotState, nextMeta?.name ?? name, nextMeta);
+      const submittedFingerprint = fingerprintProjectSnapshot(snapshotState, nextMeta?.name ?? name, nextMeta, snapshotPdfFile, snapshotPdfRef);
       dispatch({ type: "SET", k: "projectMeta", v: nextMeta });
       const currentFingerprint = hasPersistableWorkspace(latestStateRef.current)
-        ? fingerprintProjectSnapshot(latestStateRef.current, nextMeta?.name ?? name, nextMeta)
+        ? fingerprintProjectSnapshot(latestStateRef.current, nextMeta?.name ?? name, nextMeta, latestPdfFileRef.current, latestPdfRefRef.current)
         : null;
       if (currentFingerprint === submittedFingerprint) {
         dispatch({ type: "SET", k: "savedFingerprint", v: submittedFingerprint });
@@ -421,12 +555,27 @@ export default function App() {
     await dropWorkspaceDraft();
     if (nextData) {
       dispatch({ type: "LOAD", d: nextData });
-      setPdfFile(nextPdfFile);
+      await restorePdfSelectionFromData(nextData, { silent: false });
+      if (!extractPdfRefFromData(nextData) && nextPdfFile) {
+        try {
+          await persistPdfSelection(nextPdfFile, { silent: true });
+        } catch {
+          // toast already shown in persist helper when needed
+        }
+      }
       setTab("editor");
       setStudioRoute("editor");
     } else {
       dispatch({ type: "RESET" });
-      setPdfFile(nextPdfFile);
+      if (nextPdfFile) {
+        try {
+          await persistPdfSelection(nextPdfFile, { silent: true });
+        } catch {
+          // keep local file selection behavior best-effort
+        }
+      } else {
+        clearPdfSelection();
+      }
       setTab("editor");
       setStudioRoute(nextScreen);
     }
@@ -444,11 +593,11 @@ export default function App() {
 
   // ── リセット確認 ──
   const handleReset = () => {
-    const hasWorkspaceState = hasPersistableWorkspace(state) || Boolean(pdfFile) || Boolean(state.activeJobId);
+    const hasWorkspaceState = hasPersistableWorkspace(state) || Boolean(pdfFile) || Boolean(pdfRef) || Boolean(state.activeJobId);
     if (!hasWorkspaceState) {
       void dropWorkspaceDraft();
       dispatch({ type: "RESET" });
-      setPdfFile(null);
+      clearPdfSelection();
       setStudioRoute("home");
       return;
     }
@@ -523,7 +672,7 @@ export default function App() {
 
   useEffect(() => {
     const handler = (e) => {
-      if (view === "admin" || studioScreen === "home") return;
+      if (view === "admin" || studioScreen === "home" || studioScreen === "kg_compare" || studioScreen === "script_compare") return;
       if (["INPUT", "TEXTAREA"].includes(e.target.tagName) || e.target.contentEditable === "true") return;
       if (confirmProps.open) return;
       if ((e.metaKey || e.ctrlKey) && e.code === "KeyZ" && !e.shiftKey) {
@@ -617,7 +766,7 @@ export default function App() {
       setAdminRoute();
       return;
     }
-    setStudioRoute(studioScreen === "editor" ? "editor" : "home");
+    setStudioRoute(studioScreen === "editor" || studioScreen === "kg_compare" || studioScreen === "script_compare" ? studioScreen : "home");
   };
 
   const handleLogout = () => {
@@ -629,7 +778,8 @@ export default function App() {
       setView("studio");
       setStudioScreen("home");
       dispatch({ type: "RESET" });
-      setPdfFile(null);
+      clearPdfSelection();
+      setHomePendingPdf(null);
       addToast("ok", "ログアウトしました");
     };
     if (!isDirty && !state.activeJobId) {
@@ -724,6 +874,10 @@ export default function App() {
                 ? "ADMIN OVERVIEW"
                 : studioScreen === "home"
                   ? "PROJECT INDEX"
+                  : studioScreen === "kg_compare"
+                    ? "KG COMPARE LAB"
+                  : studioScreen === "script_compare"
+                    ? "SCRIPT COMPARE LAB"
                   : state.projectMeta?.name ?? "EDITOR"}
             </div>
           </div>
@@ -751,6 +905,32 @@ export default function App() {
             </button>
           ))}
         </div>
+        {view === "studio" && (
+          <div style={{ display: "inline-flex", padding: 3, borderRadius: 999, background: "var(--s2)", border: "1px solid var(--bd)" }}>
+            {[
+              ["home", "ホーム"],
+              ["editor", "エディタ"],
+              ["kg_compare", "KG比較"],
+              ["script_compare", "台本比較"],
+            ].map(([key, label]) => (
+              <button
+                key={key}
+                onClick={() => setStudioRoute(key)}
+                style={{
+                  padding: "4px 10px",
+                  border: "none",
+                  borderRadius: 999,
+                  background: studioScreen === key ? "rgba(91,141,239,.22)" : "transparent",
+                  color: studioScreen === key ? "var(--ac)" : "var(--ts)",
+                  fontSize: 10,
+                  fontWeight: 600,
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
         <div style={{ flex: 1 }} />
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <div style={{ fontSize: 10, color: "var(--tm)" }}>
@@ -795,6 +975,30 @@ export default function App() {
           requestConfirm={requestConfirm}
           requestPrompt={requestPrompt}
           addToast={addToast}
+          pendingPdf={homePendingPdf}
+          setPendingPdf={setHomePendingPdf}
+          homeQuery={state.homeQuery}
+          homeSortKey={state.homeSortKey}
+          dispatch={dispatch}
+        />
+      ) : view === "studio" && studioScreen === "kg_compare" ? (
+        <KgComparePage
+          state={state}
+          dispatch={dispatch}
+          pdfFile={pdfFile}
+          setPdfFile={handlePdfSelected}
+          addToast={addToast}
+          onOpenEditor={() => setStudioRoute("editor")}
+          onOpenHome={() => setStudioRoute("home")}
+        />
+      ) : view === "studio" && studioScreen === "script_compare" ? (
+        <ScriptComparePage
+          state={state}
+          dispatch={dispatch}
+          addToast={addToast}
+          onOpenEditor={() => setStudioRoute("editor")}
+          onOpenHome={() => setStudioRoute("home")}
+          onOpenKgCompare={() => setStudioRoute("kg_compare")}
         />
       ) : (
       <div style={{ flex: 1, minHeight: 0, padding: 12, overflow: "hidden" }}>
@@ -821,7 +1025,7 @@ export default function App() {
             state={state}
             dispatch={dispatch}
             pdfFile={pdfFile}
-            setPdfFile={setPdfFile}
+            setPdfFile={handlePdfSelected}
             addToast={addToast}
             requestConfirm={requestConfirm}
             handleReset={handleReset}
@@ -847,6 +1051,7 @@ export default function App() {
           <RightPanel
             state={state}
             dispatch={dispatch}
+            pdfFile={pdfFile}
             addToast={addToast}
             requestConfirm={requestConfirm}
             tab={tab}

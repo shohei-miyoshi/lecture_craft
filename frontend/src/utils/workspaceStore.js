@@ -36,15 +36,16 @@ export function isHydratableWorkspaceDraft(data) {
       || data.project_meta?.id
       || data.project_meta?.name
       || data.pdf_name
+      || data.pdf_ref?.material_name
     ),
   );
 }
 
 export function buildWorkspaceDraftData(state, pdfFile) {
-  return buildWorkspaceDraftDataWithMeta(state, pdfFile, null);
+  return buildWorkspaceDraftDataWithMeta(state, pdfFile, null, null);
 }
 
-export function buildWorkspaceDraftDataWithMeta(state, pdfFile, workspaceMeta = null) {
+export function buildWorkspaceDraftDataWithMeta(state, pdfFile, pdfRef = null, workspaceMeta = null) {
   const now = new Date().toISOString();
   return {
     slides: state.slides,
@@ -78,6 +79,7 @@ export function buildWorkspaceDraftDataWithMeta(state, pdfFile, workspaceMeta = 
     progress: state.progress,
     active_job_id: state.activeJobId ?? null,
     pdf_name: pdfFile?.name ?? null,
+    pdf_ref: pdfRef ?? null,
   };
 }
 
@@ -101,6 +103,7 @@ export function fingerprintWorkspaceData(data) {
     progress: Number(data?.progress ?? 0) || 0,
     active_job_id: data?.active_job_id ?? null,
     pdf_name: data?.pdf_name ?? null,
+    pdf_ref: data?.pdf_ref ?? null,
   });
 }
 

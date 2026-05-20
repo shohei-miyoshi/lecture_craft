@@ -2,8 +2,10 @@ export const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
 
 export const DETAIL_VALS   = ["summary", "standard", "detail"];
 export const DIFF_VALS     = ["intro", "basic", "advanced"];
+export const MODE_VALS     = ["audio", "video", "hl"];
 export const DETAIL_LABELS = ["要約的", "標準的", "精緻"];
 export const DIFF_LABELS   = ["入門", "基礎", "発展"];
+export const MODE_LABELS   = ["音声", "動画", "HL動画"];
 
 /** ハイライト種別の表示名 */
 export const KIND_LABEL = { marker: "マーカー", arrow: "矢印", box: "囲み" };
