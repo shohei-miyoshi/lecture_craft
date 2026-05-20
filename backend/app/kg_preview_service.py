@@ -244,6 +244,93 @@ Output:
 """
 
 
+KG_MULTIREL_V2_PROMPT_TEMPLATE = """[SYSTEM]
+You are an expert builder of explanation-oriented knowledge graphs for university lectures.
+
+[USER]
+Build a **typed multi-relation knowledge graph** directly from the target lecture slides.
+
+Unlike a prerequisite-only graph, this graph should represent the lecture as a teaching structure:
+- important concepts
+- definitions and explanations
+- examples
+- contrasts
+- part-whole relations
+- use/purpose relations
+- explanation order hints
+- prerequisite relations only when they are truly prerequisite relations
+
+## Allowed relation labels
+- Is-a-Prerequisite-of
+- explains
+- example_of
+- contrasts_with
+- part_of
+- used_for
+- step_before
+
+## Output format (STRICT)
+Return a single JSON object only. Do not wrap it in markdown.
+
+```json
+{
+  "nodes": [
+    {
+      "id": "concept name",
+      "importance": 3,
+      "role": "core",
+      "slide_refs": [1],
+      "evidence_text": ["short phrase from slide"]
+    }
+  ],
+  "edges": [
+    {
+      "source": "concept A",
+      "target": "concept B",
+      "relation": "contrasts_with",
+      "slide_refs": [1],
+      "evidence_text": ["short phrase from slide"],
+      "rationale": "short explanation"
+    }
+  ],
+  "notes": ["optional short note"]
+}
+```
+
+## Node rules
+- Extract 6 to 18 concepts that are useful for generating a natural lecture script.
+- Concept names must be written in **{LANGUAGE}**.
+- Use canonical textbook-like noun phrases.
+- Merge surface variants referring to the same concept.
+- Do not include slide logistics such as まとめ or 演習.
+- `importance` is an integer from 1 to 5.
+- `role` should be one of: core, foundation, application, example, method, evidence.
+
+## Edge rules
+- Use 8 to 28 typed edges.
+- Do not force every relation to be prerequisite.
+- Use `contrasts_with` for concepts explained by comparison or opposition.
+- Use `example_of` for concrete examples of a broader concept.
+- Use `part_of` for components or substructures.
+- Use `used_for` for purpose/application relations.
+- Use `explains` when one concept clarifies another but is not strictly a prerequisite.
+- Use `step_before` for procedural or explanation order relations.
+- Use `Is-a-Prerequisite-of` only when understanding the source is genuinely necessary before the target.
+- `slide_refs` are 1-based slide numbers.
+- `evidence_text` should contain short phrases copied or closely paraphrased from the slides.
+- Do not invent concepts or facts that are not supported by the slides.
+
+## Task
+Course:
+{COURSE_NAME}
+
+Input:
+{CONTENT}
+
+Output:
+"""
+
+
 KG_ORDER_PROMPT_TEMPLATE = """[SYSTEM]
 You are designing an explanation order for a university lecture from a fixed prerequisite graph.
 
@@ -1030,6 +1117,15 @@ def build_multirel_prompt(context: KgRunContext, concept_inventory: Sequence[str
     )
 
 
+def build_multirel_v2_prompt(context: KgRunContext) -> str:
+    return fill_prompt_template(
+        KG_MULTIREL_V2_PROMPT_TEMPLATE,
+        COURSE_NAME=context.course_name,
+        LANGUAGE=context.language,
+        CONTENT=f"{len(context.image_paths)} lecture slides (images shown above)",
+    )
+
+
 def build_order_prompt(context: KgRunContext, baseline_triplets: Sequence[Triplet]) -> str:
     return fill_prompt_template(
         KG_ORDER_PROMPT_TEMPLATE,
@@ -1248,6 +1344,127 @@ def align_multirel_payload(
     }
 
 
+def sanitize_node_role(value: Any) -> str:
+    role = canonical_text(value)
+    allowed = {"core", "foundation", "application", "example", "method", "evidence"}
+    return role if role in allowed else "core"
+
+
+def align_multirel_v2_payload(
+    parsed: Dict[str, Any],
+    *,
+    slide_count: int,
+    max_nodes: int = 24,
+    max_edges: int = 36,
+) -> Dict[str, Any]:
+    nodes_by_key: Dict[str, Dict[str, Any]] = {}
+    dropped_nodes = 0
+
+    for row in parsed.get("nodes") or []:
+        if not isinstance(row, dict):
+            dropped_nodes += 1
+            continue
+        node_id = canonical_text(row.get("id"))
+        if not node_id:
+            dropped_nodes += 1
+            continue
+        if node_id not in nodes_by_key:
+            nodes_by_key[node_id] = {
+                "id": node_id,
+                "importance": sanitize_importance(row.get("importance")),
+                "role": sanitize_node_role(row.get("role")),
+                "slide_refs": sanitize_slide_refs(row.get("slide_refs"), slide_count),
+                "evidence_text": sanitize_evidence_text(row.get("evidence_text")),
+            }
+        else:
+            existing = nodes_by_key[node_id]
+            if existing.get("importance") is None:
+                existing["importance"] = sanitize_importance(row.get("importance"))
+            existing["slide_refs"] = sorted(set(existing.get("slide_refs") or []) | set(sanitize_slide_refs(row.get("slide_refs"), slide_count)))
+            existing["evidence_text"] = sanitize_evidence_text(
+                list(existing.get("evidence_text") or []) + list(row.get("evidence_text") or [])
+            )
+
+    dedupe = set()
+    edges: List[Dict[str, Any]] = []
+    dropped_edges = 0
+    for row in parsed.get("edges") or []:
+        if not isinstance(row, dict):
+            dropped_edges += 1
+            continue
+        source = canonical_text(row.get("source"))
+        target = canonical_text(row.get("target"))
+        relation = sanitize_relation_label(row.get("relation"))
+        if not source or not target or source == target:
+            dropped_edges += 1
+            continue
+        for node_id in (source, target):
+            if node_id not in nodes_by_key:
+                nodes_by_key[node_id] = {
+                    "id": node_id,
+                    "importance": None,
+                    "role": "core",
+                    "slide_refs": [],
+                    "evidence_text": [],
+                }
+        key = (source, target, relation)
+        if key in dedupe:
+            continue
+        dedupe.add(key)
+        edges.append(
+            {
+                "source": source,
+                "target": target,
+                "relation": relation,
+                "slide_refs": sanitize_slide_refs(row.get("slide_refs"), slide_count),
+                "evidence_text": sanitize_evidence_text(row.get("evidence_text")),
+                "rationale": canonical_text(row.get("rationale"))[:200],
+            }
+        )
+
+    relation_priority = {
+        "explains": 8,
+        "contrasts_with": 8,
+        "example_of": 7,
+        "part_of": 7,
+        "used_for": 7,
+        "step_before": 6,
+        "Is-a-Prerequisite-of": 5,
+    }
+    edges.sort(
+        key=lambda row: (
+            -relation_priority.get(row["relation"], 0),
+            -len(row.get("slide_refs") or []),
+            canonical_text(row["source"]),
+            canonical_text(row["target"]),
+        )
+    )
+    edges = edges[:max_edges]
+
+    connected_nodes = {row["source"] for row in edges} | {row["target"] for row in edges}
+    nodes = list(nodes_by_key.values())
+    nodes.sort(
+        key=lambda row: (
+            0 if row["id"] in connected_nodes else 1,
+            -(row.get("importance") or 0),
+            -len(row.get("slide_refs") or []),
+            canonical_text(row["id"]),
+        )
+    )
+    nodes = nodes[:max_nodes]
+    kept_node_ids = {row["id"] for row in nodes}
+    filtered_edges = [row for row in edges if row["source"] in kept_node_ids and row["target"] in kept_node_ids]
+
+    notes = [canonical_text(value)[:200] for value in (parsed.get("notes") or []) if canonical_text(value)]
+    return {
+        "nodes": nodes,
+        "edges": filtered_edges,
+        "notes": notes,
+        "dropped_nodes": dropped_nodes,
+        "dropped_edges": dropped_edges + (len(edges) - len(filtered_edges)),
+    }
+
+
 def build_triplets_from_structured_edges(edges: Sequence[Dict[str, Any]]) -> List[Triplet]:
     triplets: List[Triplet] = []
     for row in edges:
@@ -1390,6 +1607,98 @@ def run_multirel_variant(context: KgRunContext, _variant: KgVariantSpec) -> Dict
                         for relation, count in sorted(relation_counts.items(), key=lambda row: (-row[1], row[0]))
                     ],
                 }
+            ],
+        },
+        "graph_payload_override": enrich_graph_payload(
+            build_graph_payload(triplets, node_inventory=concept_inventory),
+            node_details=node_details,
+            edge_details=edge_details,
+        ),
+    }
+
+
+def run_multirel_v2_variant(context: KgRunContext, _variant: KgVariantSpec) -> Dict[str, Any]:
+    prompt = build_multirel_v2_prompt(context)
+    parsed = run_openai_json_extraction(
+        context.client,
+        prompt,
+        context.image_paths,
+        context.model_name,
+        system_instruction="You build a strict typed multi-relation knowledge graph directly from lecture slides.",
+        error_label="KG multi-relation v2 extraction",
+    )
+    structured = align_multirel_v2_payload(parsed, slide_count=len(context.image_paths))
+    node_details = structured["nodes"]
+    edge_details = structured["edges"]
+    concept_inventory = [row["id"] for row in node_details]
+    triplets = build_triplets_from_structured_edges(edge_details)
+    is_dag, cycles = check_dag(triplets)
+    relation_counts = relation_counter(edge_details)
+    prerequisite_edges = [row for row in edge_details if row.get("relation") == "Is-a-Prerequisite-of"]
+    prerequisite_triplets = build_triplets_from_structured_edges(prerequisite_edges)
+    prerequisite_is_dag, prerequisite_cycles = check_dag(prerequisite_triplets)
+    notes = list(structured.get("notes") or [])
+    if structured["dropped_nodes"] > 0:
+        notes.append(f"不正または空の node を {structured['dropped_nodes']} 件除外しました。")
+    if structured["dropped_edges"] > 0:
+        notes.append(f"不正形式、自己ループ、または保持node外の edge を {structured['dropped_edges']} 件除外しました。")
+    if not is_dag:
+        notes.append("多関係KG中心版なので、全体グラフはDAGでない場合があります。")
+    if prerequisite_edges and not prerequisite_is_dag:
+        notes.append("prerequisite subgraph に cycle が残っています。説明順序に使う場合は要確認です。")
+    if not prerequisite_edges:
+        notes.append("この結果では prerequisite edge は抽出されませんでした。説明順序は step_before や中心性を併用してください。")
+
+    return {
+        "prompt": prompt,
+        "raw_response": json.dumps(parsed, ensure_ascii=False, indent=2),
+        "triplets": triplets,
+        "is_dag": is_dag,
+        "cycles": cycles,
+        "correction_attempts": 0,
+        "notes": notes,
+        "summary_text": "前提関係を先に固定せず、スライドから概念と typed relation を直接抽出する多関係KG中心版です。",
+        "extra_metadata": {
+            "source_variant": "direct_multirel_v2",
+            "relation_counts": relation_counts,
+            "structured_counts": {
+                "node_count": len(node_details),
+                "edge_count": len(edge_details),
+                "dropped_nodes": structured["dropped_nodes"],
+                "dropped_edges": structured["dropped_edges"],
+                "prerequisite_edge_count": len(prerequisite_edges),
+                "prerequisite_is_dag": prerequisite_is_dag,
+                "prerequisite_cycles": prerequisite_cycles,
+            },
+        },
+        "extra_payload": {
+            "structured": {
+                "nodes": node_details,
+                "edges": edge_details,
+            },
+            "prerequisite_subgraph": {
+                "edge_count": len(prerequisite_edges),
+                "is_dag": prerequisite_is_dag,
+                "cycles": prerequisite_cycles,
+                "edges": prerequisite_edges,
+            },
+            "analysis_panels": [
+                {
+                    "kind": "relation_counts",
+                    "title": "Relation 内訳",
+                    "items": [
+                        {"label": relation, "value": count}
+                        for relation, count in sorted(relation_counts.items(), key=lambda row: (-row[1], row[0]))
+                    ],
+                },
+                {
+                    "kind": "prerequisite_subgraph",
+                    "title": "Prerequisite Subgraph",
+                    "items": [
+                        {"label": "edge_count", "value": len(prerequisite_edges)},
+                        {"label": "is_dag", "value": prerequisite_is_dag},
+                    ],
+                },
             ],
         },
         "graph_payload_override": enrich_graph_payload(
@@ -1552,6 +1861,14 @@ KG_VARIANTS: List[KgVariantSpec] = [
         description="固定した概念集合のまま relation を増やし、説明向けの関係を比較します。",
         kind="multirel",
         runner=run_multirel_variant,
+        enabled=True,
+    ),
+    KgVariantSpec(
+        id="multirel_v2",
+        label="多関係中心v2",
+        description="前提関係を先に固定せず、概念と typed relation を直接抽出する多関係KG中心版です。",
+        kind="multirel_v2",
+        runner=run_multirel_v2_variant,
         enabled=True,
     ),
     KgVariantSpec(
