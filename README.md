@@ -1,349 +1,106 @@
-# lecture_craft
+# LectureCraft
 
-講義メディア生成システムの monorepo です。  
-React + Vite のフロントエンドと、FastAPI + `auto_lecture` ベースのバックエンドを同じリポジトリで管理します。
+LectureCraftは，講義スライドPDFから，講義として自然な説明台本，音声，ハイライト付き動画を半自動で生成する研究用システムです．
 
-現在の安定版ブランチは `main`、開発中の最新版は `feature/monorepo-backend-integration` です。  
-最終的にはこの monorepo 構成を `main` に統合する前提で、この README もその標準構成として書いています。
+単純なスライド読み上げではなく，レイアウト，重要概念，概念間の関係，図表と説明の対応を生成に取り入れることを目指しています．また，AIの出力を人が段階的に確認・修正し，その編集履歴を次回以降の生成改善へ利用する仕組みを研究します．
 
-## このリポジトリで管理するもの
+## 研究の中心課題
 
-- `frontend/`: 講義生成・編集 UI、管理画面、認証画面
-- `backend/`: API、認証、保存、ジョブ管理、生成・export 処理
-- `docs/`: API 契約、デプロイ・運用メモ
-- `scripts/`: ローカル開発用のセットアップ・起動補助
+- ナレッジグラフを台本生成へ組み込むことで，説明の網羅性や順序を改善できるか．
+- ユーザの修正履歴を構造化して再利用することで，次回以降の修正量を減らせるか．
+- 領域，台本，対応付けを段階的に確認することで，講義メディアの品質を安定させられるか．
+- 生成条件，生成結果，編集履歴を追跡し，再現可能な実験データとして扱えるか．
 
-## まず見る場所
+研究背景，先行研究，実装状況，既知の課題，今後の優先順位は，[研究・開発引き継ぎ書](docs/research-progress-design-lecturecraft.md)にまとめています．別PCや別のCodexへ引き継ぐ場合も，最初にこの文書を参照してください．
 
-- [README.md](README.md): monorepo 全体の入口
-- [frontend/README.md](frontend/README.md): フロントエンド補足
-- [backend/README.md](backend/README.md): バックエンド補足
-- [docs/api-contract.md](docs/api-contract.md): フロントとバックエンドの API 契約
-- [docs/mcp-server-deploy.md](docs/mcp-server-deploy.md): MCP サーバ配置時のメモ
+## 現在の主な機能
 
-## フォルダ構造
+- ユーザ認証とユーザ単位のプロジェクト管理
+- PDFアップロードとサーバ側への永続保存
+- LayoutParserによるスライド領域解析
+- 領域確認，台本確認，対応付け確認の段階的なレビュー
+- レイアウト解析中・確認中と並行した台本生成
+- 編集後の領域JSONと領域画像を使った台本対応付け
+- 台本確認後の文単位TTS生成とキャッシュ
+- 編集された文だけを再生成する音声プレビュー
+- 音声と同期した台本・ハイライト表示，シーク操作
+- 音声のみ，ハイライトなし動画，ハイライト付き動画の書き出し
+- 生成run，成果物，編集イベント，確認状態の保存
+- 実験対象runの選別と研究用JSONL出力
+- 管理者向けの利用状況・実験データ確認
 
-代表的なファイルだけを抜粋して書いています。
+## 現在の研究実装
+
+次の機能は研究用プロトタイプとして実装されています．
+
+- `KG off / slide / global / global_slide`の実験条件
+- 生成結果から抽出した軽量なナレッジグラフの保存
+- 編集イベントから作る修正メモリ
+- 同一プロジェクトを中心とした類似修正の検索とプロンプトへの追加
+- 条件，prompt version，run，revision，artifactを追跡する保存構造
+
+一方，次の項目は今後の研究・実装対象です．
+
+- KGを台本生成より前に構築し，台本生成の根拠として本格利用する処理
+- 複数プロジェクト・複数利用者を横断した修正メモリ検索
+- 修正理由を含む高品質な学習データ収集
+- LayoutParserまたは台本生成モデルのファインチューニング
+- PostgreSQLを使った本番規模の運用検証
+- 定量評価と被験者実験
+
+## システム構成
 
 ```text
 lecture_craft/
-├── frontend/
-│   ├── public/
-│   │   └── favicon.svg                 # ブラウザ用アイコン
-│   ├── src/
-│   │   ├── components/
-│   │   │   ├── AdminDashboard.jsx      # 管理ダッシュボード
-│   │   │   ├── AuthScreen.jsx          # ログイン / ゲスト導線
-│   │   │   ├── ProjectHome.jsx         # プロジェクト一覧・新規作成画面
-│   │   │   ├── LeftPanel.jsx           # アップロード・生成設定
-│   │   │   ├── CenterPanel.jsx         # スライドプレビュー・再生バー
-│   │   │   ├── RightPanel.jsx          # 台本・ハイライト編集
-│   │   │   ├── SlideCanvas.jsx         # スライドプレビュー＋描画
-│   │   │   ├── SentenceCard.jsx        # 台本1文カード
-│   │   │   ├── HlEditor.jsx            # HL設定パネル
-│   │   │   ├── ExportPanel.jsx         # 書き出しパネル
-│   │   │   ├── AiPanel.jsx             # AI修正パネル
-│   │   │   ├── AudioView.jsx           # 音声モード専用ビュー
-│   │   │   └── ...                     # そのほかのUI部品
-│   │   ├── hooks/
-│   │   │   ├── useConfirm.js           # カスタム確認ダイアログフック
-│   │   │   ├── usePlayback.js          # 再生タイマー
-│   │   │   ├── useResizableLayout.js   # パネル幅リサイズ
-│   │   │   └── useToast.js             # トースト通知フック
-│   │   ├── store/
-│   │   │   └── reducer.js              # アプリ全状態のReducer
-│   │   └── utils/
-│   │       ├── constants.js            # 定数・API URL
-│   │       ├── projectStore.js         # プロジェクト保存
-│   │       ├── sessionStore.js         # セッション保存
-│   │       ├── research.js             # 研究ログ補助
-│   │       └── ...                     # 描画・補助ユーティリティ
-│   │   ├── App.jsx                     # アプリ全体
-│   │   ├── index.css                   # 全体スタイル
-│   │   └── main.jsx                    # エントリポイント
-│   ├── .env.example                    # フロント用環境変数例
-│   ├── README.md                       # フロント補足
-│   ├── index.html                      # HTML エントリ
-│   ├── package.json                    # npm scripts / 依存
-│   ├── vercel.json                     # Vercel 設定
-│   └── vite.config.js                  # Vite 設定
-├── backend/
-│   ├── app/
-│   │   ├── main.py                     # FastAPI エントリポイント
-│   │   ├── models.py                   # API 入出力モデル
-│   │   ├── db.py                       # DB 接続と初期化
-│   │   ├── persistence.py              # ユーザ・プロジェクト保存
-│   │   ├── jobs.py                     # 非同期生成ジョブ管理
-│   │   ├── service.py                  # generate / export 本体
-│   │   ├── admin.py                    # 管理ダッシュボード集計
-│   │   └── cache.py                    # 生成キャッシュ補助
-│   ├── src/
-│   │   └── auto_lecture/               # 講義生成パイプライン本体
-│   ├── scripts/
-│   │   ├── run_all.py                  # 動画系一括生成
-│   │   ├── run_audio_only_lecture.py   # 音声のみ生成
-│   │   ├── run_lp.py                   # LayoutParser 実行
-│   │   └── ...                         # 実験用スクリプト
-│   ├── README.md                       # バックエンド補足
-│   ├── requirements_min.txt            # API 最小依存
-│   ├── requirements_visual_extra.txt   # 動画系追加依存
-│   ├── requirements.txt                # 研究用込みの重い依存
-│   └── tree_*.txt                      # 出力構造の参考
-├── docs/
-│   ├── api-contract.md                 # API 契約
-│   └── mcp-server-deploy.md            # MCP サーバ配置メモ
-├── scripts/
-│   ├── setup_backend.sh                # backend 最小セットアップ
-│   ├── setup_backend_full.sh           # backend 動画系追加セットアップ
-│   ├── dev_backend.sh                  # backend 起動
-│   ├── dev_frontend.sh                 # frontend 起動
-│   └── check_backend.sh                # backend health check
-├── .gitignore                          # 生成物・秘密情報の除外
-├── Makefile                            # よく使うコマンドのショートカット
-└── README.md                           # monorepo 全体の入口
+├── frontend/   # React + Viteの編集・確認・管理UI
+├── backend/    # FastAPI，生成処理，DB，成果物管理
+├── docs/       # 公開可能な設計・研究資料
+└── scripts/    # ローカル開発と検査用スクリプト
 ```
 
-## 初回セットアップから起動まで
+基本構成は次のとおりです．
 
-### 1. リポジトリをクローン
+1. フロントエンドがPDF，編集状態，確認操作を受け付けます．
+2. FastAPIが認証，プロジェクト，run，job，artifactを管理します．
+3. バックグラウンド処理がレイアウト解析，台本生成，TTS，動画生成を行います．
+4. DBを台帳，ファイルストレージをPDF・音声・動画などの正本として扱います．
+5. フロントエンドは音声時刻を基準に，台本とハイライトを同期表示します．
 
-```bash
-git clone https://github.com/shohei-miyoshi/lecture_craft.git
-cd lecture_craft
-```
+APIの概要は[API契約](docs/api-contract.md)を参照してください．
 
-### 2. monorepo 構成のブランチへ切り替える
+## ローカル開発
 
-将来的にはこの構成が `main` に統合される前提ですが、まだ統合前の期間は対応ブランチへ切り替えてください。
+### 必要環境
 
-```bash
-git fetch origin
-git switch feature/monorepo-backend-integration
-```
+- Node.js 20以降
+- Python 3.10または3.11
+- ffmpeg
+- OpenAI APIを利用する場合は`OPENAI_API_KEY`
 
-統合後はこの手順は不要になります。
+### バックエンド
 
-### 3. 前提コマンドを確認する
-
-- `git`
-- `Node.js 18 以上` と `npm`
-- `Python 3.10` または `3.11`
-- `ffmpeg`
-- 生成確認をする場合は `OPENAI_API_KEY`
-
-確認例:
+最小構成をセットアップします．
 
 ```bash
-node -v
-npm -v
-python3.10 --version || python3.11 --version || python3 --version
-ffmpeg -version
-```
-
-### 4. backend を初回セットアップする
-
-```bash
-# 以前の失敗で backend/.venv が不正な Python で作られている場合だけ削除
-rm -rf backend/.venv
-
-# 最小構成のセットアップ
 bash scripts/setup_backend.sh
+bash scripts/dev_backend.sh
 ```
 
-`scripts/setup_backend.sh` は次を自動で行います。
-
-- `python3.10` を優先して探す
-- `backend/.venv` を作る
-- `backend/requirements_min.txt` をインストールする
-
-ここではまだ backend は起動しません。
-
-### 5. OpenAI API キーを設定する
-
-講義生成まで試すなら、backend 起動前に API キーを設定してください。  
-health check だけなら未設定でも構いません。
-
-推奨:
-
-```bash
-export OPENAI_API_KEY=YOUR_OPENAI_API_KEY
-```
-
-毎回 export したくない場合:
-
-```bash
-mkdir -p ~/.config/lecture_craft
-printf '%s\n' 'YOUR_OPENAI_API_KEY' > ~/.config/lecture_craft/apikey.txt
-```
-
-### 6. frontend の依存を初回インストールする
-
-`make frontend` は `npm install` を自動ではしてくれないので、初回だけ手動で入れます。
-
-```bash
-cd frontend
-npm install
-cd ..
-```
-
-### 7. frontend の環境変数を用意する
-
-backend を `http://localhost:8000` で起動するなら必須ではありませんが、初回は作っておくと分かりやすいです。
-
-```bash
-cd frontend
-cp .env.example .env
-cd ..
-```
-
-`frontend/.env.example` の中身は次です。
-
-```bash
-VITE_API_URL=http://localhost:8000
-```
-
-### 8. backend を起動する
-
-ここからはターミナルを 2 つ使います。
-
-ターミナル 1:
-
-```bash
-make backend
-```
-
-これは `bash scripts/dev_backend.sh` を呼び、`uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload` で backend を起動します。  
-このコマンドは常駐するので、ターミナルはそのまま開いたままにしてください。
-
-### 9. frontend を起動する
-
-ターミナル 2:
-
-```bash
-make frontend
-```
-
-これは `frontend/` に移動して `npm run dev` を実行します。  
-こちらも常駐するので、ターミナルは開いたままにしてください。
-
-### 10. backend の起動確認をする
-
-ターミナル 3 か、空いている別ターミナルで次を実行します。
-
-```bash
-bash scripts/check_backend.sh
-```
-
-または:
-
-```bash
-make check-backend
-```
-
-成功すれば `http://127.0.0.1:8000/api/health` の JSON が返ります。
-
-### 11. ブラウザで frontend を開く
-
-期待する URL:
-
-- backend: `http://127.0.0.1:8000`
-- frontend: `http://localhost:5173`
-
-ブラウザで `http://localhost:5173` を開いて、次が見えれば起動できています。
-
-- ログインまたはゲスト利用の導線
-- `Studio / Admin` の切り替え
-- project home から新規作成や既存プロジェクト選択の UI
-
-### 12. 初回セットアップ後、次回から何を実行すればよいか
-
-2 回目以降は、依存追加が無ければ毎回 `npm install` や `setup_backend.sh` は不要です。  
-通常は次だけで大丈夫です。
-
-ターミナル 1:
-
-```bash
-make backend
-```
-
-ターミナル 2:
-
-```bash
-make frontend
-```
-
-必要なら:
-
-```bash
-make check-backend
-```
-
-## backend セットアップ詳細
-
-### `scripts/setup_backend.sh` がやること
-
-1. `python3.10` を優先して探す
-2. なければ `python3.11`、それもなければ `python3` を使う
-3. `backend/.venv` を作る
-4. `backend/requirements_min.txt` をインストールする
-
-### 動画系依存まで入れる場合
+動画生成を含む依存関係が必要な場合は，追加セットアップを行います．
 
 ```bash
 bash scripts/setup_backend_full.sh
 ```
 
-このスクリプトは `backend/requirements_visual_extra.txt` を追加で入れます。  
-`video` / `video_highlight` まで `backend/.venv` だけで完結して試したいときに使います。
-
-### 既存の `../auto_lecture/.venv` を使う場合
-
-`scripts/dev_backend.sh` は、`backend/.venv` に動画系依存が無いときでも、
-`../auto_lecture/.venv` に `moviepy` / `detectron2` / `imageio_ffmpeg` がそろっていれば、
-そちらを優先して起動します。
-
-### API キーの渡し方
-
-推奨:
+バックエンドの状態は次のコマンドで確認できます．
 
 ```bash
-export OPENAI_API_KEY=YOUR_OPENAI_API_KEY
+bash scripts/check_backend.sh
 ```
 
-ローカルファイルで持つ場合:
+標準のローカルAPIは`http://127.0.0.1:8000`です．
 
-```bash
-mkdir -p ~/.config/lecture_craft
-printf '%s\n' 'YOUR_OPENAI_API_KEY' > ~/.config/lecture_craft/apikey.txt
-```
-
-backend は次の順でキーを見に行く前提です。
-
-- `OPENAI_API_KEY`
-- `~/.config/lecture_craft/openai_api_key`
-- `~/.config/lecture_craft/openai_api_key.txt`
-- `~/.config/lecture_craft/apikey.txt`
-- 互換用の `~/.config/kenkyu/...`
-
-### DB の扱い
-
-- 開発時の既定値: `sqlite:///backend/data/lecture_craft_app.db`
-- 実装場所: `backend/app/db.py`
-- 本番想定: `DATABASE_URL` を設定して PostgreSQL に切り替え
-
-起動時に `backend/app/db.py` が DB を初期化し、必要なテーブルを作成します。
-
-### backend で主に増えるもの
-
-- `backend/.venv/`
-- `backend/data/lecture_craft_app.db`
-- `backend/outputs/...`
-- `backend/teachingmaterial/pdf/...`
-- `backend/teachingmaterial/img/...`
-
-## frontend セットアップ詳細
-
-frontend は `frontend/` 以下の Vite アプリです。
+### フロントエンド
 
 ```bash
 cd frontend
@@ -352,140 +109,64 @@ cp .env.example .env
 npm run dev
 ```
 
-`frontend/.env.example`:
+標準のローカルURLは`http://localhost:5173`です．
+
+`frontend/.env`にはAPIの公開URLなどだけを設定してください．APIキーやパスワードは置かず，バックエンドの環境変数として管理します．
+
+## 検証
 
 ```bash
-VITE_API_URL=http://localhost:8000
+cd frontend
+npm run lint
+npm run build
 ```
-
-この値は `frontend/src/utils/constants.js` で読み込まれ、未設定時の既定値も `http://localhost:8000` です。
-
-### frontend で主に増えるもの
-
-- `frontend/node_modules/`
-- `frontend/.env`
-- `frontend/dist/` (`npm run build` 実行後)
-
-### frontend の主要ファイル
-
-- `frontend/src/App.jsx`: 画面全体の組み立て
-- `frontend/src/main.jsx`: React のエントリポイント
-- `frontend/src/index.css`: 全体スタイル
-- `frontend/src/store/reducer.js`: 主要 state
-- `frontend/src/utils/projectStore.js`: プロジェクト保存
-- `frontend/src/utils/sessionStore.js`: セッション保存
-- `frontend/src/utils/research.js`: 研究ログ関係
-- `frontend/src/components/ProjectHome.jsx`: プロジェクトホーム
-- `frontend/src/components/AdminDashboard.jsx`: 管理画面
-- `frontend/src/components/AuthScreen.jsx`: 認証画面
-- `frontend/src/components/LeftPanel.jsx`: 入力・生成導線
-- `frontend/src/components/CenterPanel.jsx`: プレビュー中心
-- `frontend/src/components/RightPanel.jsx`: 編集導線
-
-## Makefile での起動
 
 ```bash
-make backend-setup
-make backend
-make frontend
-make check-backend
+cd backend
+.venv/bin/python -m pytest -q
 ```
 
-意味は次のとおりです。
-
-- `make backend-setup`: backend の初回セットアップ
-- `make backend`: backend 起動
-- `make frontend`: frontend 起動
-- `make check-backend`: backend health check
-
-注意:
-
-- `make frontend` は初回の `npm install` までは行いません
-- `make backend` と `make frontend` はどちらも常駐するので、別ターミナルで実行する必要があります
-
-## API の見取り図
-
-主な API は `backend/app/main.py` にあります。
-
-- `GET /api/health`: 起動確認
-- `POST /api/auth/register`: ユーザ登録
-- `POST /api/auth/login`: ログイン
-- `POST /api/auth/logout`: ログアウト
-- `GET /api/auth/me`: セッション確認
-- `POST /api/auth/guest`: ゲストセッション発行
-- `POST /api/experiments/join`: 実験参加
-- `GET /api/projects`: プロジェクト一覧
-- `POST /api/projects`: プロジェクト作成
-- `GET /api/projects/{project_id}`: プロジェクト取得
-- `PATCH /api/projects/{project_id}`: プロジェクト更新
-- `DELETE /api/projects/{project_id}`: プロジェクト削除
-- `POST /api/projects/{project_id}/events`: 操作ログ保存
-- `POST /api/projects/{project_id}/layout-review`: レイアウトレビュー保存
-- `POST /api/projects/{project_id}/script-review`: 台本レビュー保存
-- `GET /api/projects/{project_id}/review-state`: レビュー状態取得
-- `POST /api/generate`: 非同期講義生成開始
-- `GET /api/jobs/{job_id}`: 生成ジョブ進捗取得
-- `POST /api/jobs/{job_id}/cancel`: 生成ジョブ停止
-- `GET /api/admin/overview`: 管理ダッシュボード集計
-- `GET /api/admin/review-settings`: レビュー設定取得
-- `PATCH /api/admin/review-settings`: レビュー設定更新
-- `POST /api/research/session`: 研究セッション保存
-- `POST /api/export`: mp3 / mp4 export
-
-`POST /api/generate` は即時に `job_id` を返し、実処理はバックグラウンドで進みます。  
-frontend は `GET /api/jobs/{job_id}` をポーリングして進捗を追います。
-
-## 動作確認
-
-### backend だけ確認する
+コミット対象に秘密情報らしい文字列が含まれていないか，次のスクリプトでも確認できます．
 
 ```bash
-bash scripts/check_backend.sh
+bash scripts/check_secrets.sh --staged
 ```
 
-または:
+## 保存方針
 
-```bash
-curl -fsS http://127.0.0.1:8000/api/health
-```
+- プロジェクトの正本はバックエンド側に保存します．
+- PDF，スライド画像，音声，動画はartifactとして管理します．
+- DBにはartifactの識別子，種類，hash，所有者，runとの関係を保存します．
+- ブラウザ保存はUI設定などの短期状態に限定します．
+- 台本や領域を確定した時点で，変更不能なrevisionを作成します．
+- 一般ユーザによる削除はarchiveとして扱い，研究データを無言で物理削除しません．
 
-見たいポイント:
+## セキュリティ方針
 
-- `ok: true`
-- `service: lecture-craft-backend-api`
-- `capabilities.audio_ready`
-- `capabilities.video_ready`
+- 認証情報は`HttpOnly`，`Secure`，`SameSite`属性付きCookieで扱う設計です．
+- 状態変更APIではCSRF対策を行います．
+- project，run，job，artifactは所有者または管理者だけが取得できます．
+- 管理機能と研究データ出力は管理者権限を必要とします．
+- APIキー，Cookie，セッショントークン，内部パスをDBや研究用JSONLへ出力しません．
+- `.env`，秘密鍵，ローカルDB，生成物，モデル重みはGit管理から除外します．
 
-### frontend を開いて確認する
+本リポジトリの公開だけで実運用上の安全が保証されるわけではありません．公開前には，HTTPS終端，アクセス制御，バックアップ，監視，依存関係更新，実環境での認可テストが必要です．
 
-- `http://localhost:5173` が開く
-- ログインまたはゲスト利用の導線が見える
-- `Studio / Admin` 切り替えが見える
-- project home から新規作成や既存プロジェクト選択ができる
+## 公開リポジトリのデータ方針
 
-## 管理画面と認証
+このリポジトリには，公開可能なソースコードと設計資料だけを含めます．以下はコミットしません．
 
-- 保存済みプロジェクトは backend 側でユーザ単位に保存されます
-- 最初に登録されたアカウントは管理者になります
-- 管理者は `GET /api/admin/overview` と `PATCH /api/admin/review-settings` を利用できます
-- frontend では `Studio / Admin` 切り替えで管理画面に入れます
+- APIキー，パスワード，Cookie，秘密鍵
+- 個人情報を含むPDF，台本，編集ログ，実験データ
+- ローカルDB，生成音声，生成動画，モデル重み
+- 内部サーバのIPアドレス，アカウント名，絶対パス，運用コマンド
+- 一時ファイル，ビルド成果物，個人用エディタ設定
 
-## 詰まりやすい点
+公開前には`.gitignore`と`scripts/check_secrets.sh`に加え，差分を目視確認してください．
 
-- `backend/.venv` が Python 3.14 などで作られていて壊れている  
-  `rm -rf backend/.venv` の後に `bash scripts/setup_backend.sh` をやり直してください。
-- `bash scripts/dev_backend.sh` が動画依存不足を表示する  
-  `bash scripts/setup_backend_full.sh` を実行するか、既存の `../auto_lecture/.venv` を使ってください。
-- `OPENAI_API_KEY` が無い  
-  health check は通っても生成時に失敗します。
-- frontend から backend に接続できない  
-  `frontend/.env` の `VITE_API_URL` と backend の URL を確認してください。
-- `npm run lint` に失敗する  
-  `frontend/package.json` に script はありますが、依存導入状況は別途確認してください。まずは `npm run dev` と `npm run build` を優先してください。
+## ドキュメント
 
-## 関連ドキュメント
-
-- [frontend/README.md](frontend/README.md)
-- [backend/README.md](backend/README.md)
-- [docs/api-contract.md](docs/api-contract.md)
-- [docs/mcp-server-deploy.md](docs/mcp-server-deploy.md)
+- [研究・開発引き継ぎ書](docs/research-progress-design-lecturecraft.md)
+- [API契約](docs/api-contract.md)
+- [フロントエンド補足](frontend/README.md)
+- [バックエンド補足](backend/README.md)

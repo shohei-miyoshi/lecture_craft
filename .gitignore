@@ -1,0 +1,75 @@
+# Secrets / local env files
+.env
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+**/.env
+**/.env.*
+!**/.env.example
+!**/.env.sample
+!**/.env.template
+**/apikey.txt
+**/openai_api_key
+**/openai_api_key.txt
+**/*.secret
+**/secret.txt
+**/*.key
+**/*.pem
+**/*.p12
+**/*.pfx
+**/credentials.json
+**/service-account*.json
+
+# Frontend dependencies and build outputs
+frontend/node_modules/
+frontend/dist/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Python environments, caches, and runtime data
+backend/.venv/
+backend/venv/
+backend/env/
+backend/.uv-*/
+backend/outputs/
+backend/data/
+backend/teachingmaterial/img/
+backend/teachingmaterial/pdf/
+backend/collected_source/
+backend/models/
+backend/weights/
+backend/checkpoints/
+backend/experiments/runs/**
+!backend/experiments/runs/.gitkeep
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Generated research artifacts and presentation build products
+outputs/
+backend/tree_*.txt
+docs/artifact-build-manifest.json
+docs/*.pptx
+docs/*.pptx.inspect.ndjson
+*.inspect.ndjson
+
+# Local agent and editor state
+.codex/
+.claude/
+.agents/
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS metadata
+.DS_Store
+Thumbs.db
