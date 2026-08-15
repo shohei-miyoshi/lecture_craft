@@ -83,6 +83,10 @@ curl -X PUT \
 
 ### 閲覧用Endpoints
 
+#### `GET /api/projects/{project_id}/preferences`
+
+台本編集からLLMで抽出した preference memory を，新しい順に返す．`limit` は 1〜200．所有者だけが取得できる．レスポンスには件数，平均編集距離比率，preference 文，抽出状態，分類，適用範囲，利用文脈を含む．KGは別の生成コンテキストとして管理する．二回目以降の生成への反映は実験条件 `log_reuse_enabled` が有効な場合に行う．
+
 - `GET /api/projects/{project_id}/pdf`
 - `GET /api/projects/{project_id}/slides/{slide_idx}/image`
 - `GET /api/artifacts/{artifact_id}/content`

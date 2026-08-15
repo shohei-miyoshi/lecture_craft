@@ -15,6 +15,12 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
 from .db import db_conn, json_text
+from .preference_memory import (
+    cosine_similarity,
+    create_context_embedding,
+    induce_preference_from_edit,
+    normalized_edit_distance,
+)
 from .service import ApiError
 from .storage import get_artifact_store
 
@@ -24,7 +30,7 @@ PASSWORD_MIN_LENGTH = 8
 PBKDF2_ITERATIONS = 390_000
 GLOBAL_GENERATION_CONDITION_KEY = "generation_conditions_global"
 DEFAULT_GENERATION_CONDITIONS: Dict[str, Any] = {
-    "kg_mode": "off",
+    "kg_mode": "global_slide",
     "log_reuse_enabled": False,
     "review_flow_enabled": True,
     "prompt_strategy_version": "baseline_v1",
@@ -1111,10 +1117,18 @@ def save_project_events(
 ) -> Dict[str, Any]:
     saved = 0
     skipped = 0
+    event_rows = [event for event in events if isinstance(event, dict)]
+    latest_script_event_by_entity: Dict[str, str] = {}
+    for event in event_rows:
+        action_type = str(event.get("action_type") or "")
+        entity_id = str(event.get("entity_id") or "").strip()
+        external_id = str(event.get("external_event_id") or event.get("id") or "").strip()
+        if action_type in {"sentence_text", "sentence_text_changed"} and entity_id and external_id:
+            latest_script_event_by_entity[entity_id] = external_id
     with db_conn() as conn:
         project = _require_owned_project(conn, project_id, user_id)
         experiment_id = project["experiment_id"] if project else None
-        for event in events:
+        for event in event_rows:
             external_event_id = str(event.get("external_event_id") or event.get("id") or "").strip()
             if not external_event_id:
                 skipped += 1
@@ -1126,16 +1140,26 @@ def save_project_events(
                 or project["active_run_id"]
                 or ""
             ).strip() or None
+            generation_context: Dict[str, Any] = {}
             if generation_run_id:
                 run = conn.execute(
                     """
-                    SELECT id FROM generation_runs
+                    SELECT id, mode, detail, difficulty, usage_context, condition_json
+                    FROM generation_runs
                     WHERE id = :run_id AND project_id = :project_id AND user_id = :user_id
                     """,
                     {"run_id": generation_run_id, "project_id": project_id, "user_id": user_id},
                 ).fetchone()
                 if run is None:
                     generation_run_id = None
+                else:
+                    generation_context = {
+                        "mode": run["mode"],
+                        "detail": run["detail"],
+                        "difficulty": run["difficulty"],
+                        "usage_context": run["usage_context"],
+                        "generation_conditions": _loads(run["condition_json"], {}),
+                    }
             try:
                 conn.execute(
                     """
@@ -1175,6 +1199,11 @@ def save_project_events(
                     experiment_id=experiment_id,
                     generation_run_id=generation_run_id,
                     event={**event, "external_event_id": external_event_id},
+                    induce_preference=(
+                        str(event.get("action_type") or "") in {"sentence_text", "sentence_text_changed"}
+                        and latest_script_event_by_entity.get(str(event.get("entity_id") or "")) == external_event_id
+                    ),
+                    generation_context=generation_context,
                 )
                 saved += 1
             except Exception as exc:
@@ -1193,6 +1222,8 @@ def _save_correction_memory_from_event(
     experiment_id: Optional[str],
     generation_run_id: Optional[str],
     event: Dict[str, Any],
+    induce_preference: bool = False,
+    generation_context: Optional[Dict[str, Any]] = None,
 ) -> None:
     before = event.get("before")
     after = event.get("after")
@@ -1211,26 +1242,51 @@ def _save_correction_memory_from_event(
         value = event.get(key) or payload.get(key)
         if value:
             region_ids.append(str(value))
-    kg_node_ids = payload.get("kg_node_ids") if isinstance(payload.get("kg_node_ids"), list) else []
+    sentence_id = event.get("entity_id") if event.get("entity_type") in {"sentence", "study_event"} else payload.get("sentence_id")
+    kg_node_ids: List[str] = []
     slide_context = {
+        **(generation_context or {}),
         "slide_idx": slide_idx,
-        "sentence_id": event.get("entity_id") if event.get("entity_type") in {"sentence", "study_event"} else payload.get("sentence_id"),
+        "sentence_id": sentence_id,
         "highlight_id": payload.get("highlight_id") or event.get("entity_id"),
         "source": event.get("source"),
     }
+    if induce_preference:
+        preference = induce_preference_from_edit(
+            before=before,
+            after=after,
+            slide_context=slide_context,
+            applied_preference=payload.get("applied_preference"),
+            applied_preference_scope=payload.get("applied_preference_scope"),
+        )
+    else:
+        preference = {
+            "preference_text": None,
+            "preference_source": "cipher_lpi_llm_v1",
+            "preference_status": "not_candidate",
+            "preference_error": None,
+            "edit_distance_ratio": normalized_edit_distance(before, after),
+            "prompt_version": "cipher_lpi_lecturecraft_v1",
+        }
     try:
         conn.execute(
             """
             INSERT INTO correction_memories (
                 id, project_id, user_id, experiment_id, generation_run_id,
                 source_event_id, edit_type, slide_idx,
-                entity_type, entity_id, before_json, after_json, reason, slide_context_json,
+                entity_type, entity_id, before_json, after_json, reason,
+                preference_text, preference_source, preference_status, preference_error,
+                preference_kind, preference_scope, preference_reason, context_text, context_embedding_json,
+                edit_distance_ratio, slide_context_json,
                 kg_node_ids_json, region_ids_json, prompt_version, created_at
             )
             VALUES (
                 :id, :project_id, :user_id, :experiment_id, :generation_run_id,
                 :source_event_id, :edit_type, :slide_idx,
-                :entity_type, :entity_id, :before_json, :after_json, :reason, :slide_context_json,
+                :entity_type, :entity_id, :before_json, :after_json, :reason,
+                :preference_text, :preference_source, :preference_status, :preference_error,
+                :preference_kind, :preference_scope, :preference_reason, :context_text, :context_embedding_json,
+                :edit_distance_ratio, :slide_context_json,
                 :kg_node_ids_json, :region_ids_json, :prompt_version, :created_at
             )
             """,
@@ -1247,11 +1303,21 @@ def _save_correction_memory_from_event(
                 "entity_id": event.get("entity_id"),
                 "before_json": json_text(before) if before is not None else None,
                 "after_json": json_text(after) if after is not None else None,
-                "reason": payload.get("reason"),
+                "reason": preference.get("reason") or payload.get("reason"),
+                "preference_text": preference.get("preference_text"),
+                "preference_source": preference.get("preference_source"),
+                "preference_status": preference.get("preference_status"),
+                "preference_error": preference.get("preference_error"),
+                "preference_kind": preference.get("preference_kind"),
+                "preference_scope": preference.get("preference_scope"),
+                "preference_reason": preference.get("preference_reason"),
+                "context_text": preference.get("context_text"),
+                "context_embedding_json": json_text(preference.get("context_embedding") or []),
+                "edit_distance_ratio": preference.get("edit_distance_ratio"),
                 "slide_context_json": json_text(slide_context),
                 "kg_node_ids_json": json_text(kg_node_ids),
                 "region_ids_json": json_text(region_ids),
-                "prompt_version": payload.get("prompt_version"),
+                "prompt_version": preference.get("prompt_version") or payload.get("prompt_version"),
                 "created_at": str(event.get("created_at") or _now_iso()),
             },
         )
@@ -1666,14 +1732,17 @@ def find_reusable_correction_memories(
     experiment_id: Optional[str],
     project_id: Optional[str],
     limit: int = 8,
+    query_context_text: Optional[str] = None,
+    query_context: Optional[Dict[str, Any]] = None,
 ) -> List[Dict[str, Any]]:
     safe_limit = max(0, min(int(limit or 0), 20))
     if safe_limit <= 0:
         return []
     if not project_id:
         return []
-    clauses = ["user_id = :user_id", "project_id = :project_id"]
-    params: Dict[str, Any] = {"user_id": user_id, "project_id": project_id, "limit": safe_limit}
+    clauses = ["user_id = :user_id"]
+    candidate_limit = max(safe_limit, min(200, safe_limit * 10))
+    params: Dict[str, Any] = {"user_id": user_id, "limit": candidate_limit}
     if experiment_id:
         clauses.append("(experiment_id = :experiment_id OR experiment_id IS NULL)")
         params["experiment_id"] = experiment_id
@@ -1682,8 +1751,11 @@ def find_reusable_correction_memories(
         rows = conn.execute(
             f"""
             SELECT
-                id, edit_type, slide_idx, entity_type, entity_id, before_json, after_json,
-                reason, slide_context_json, kg_node_ids_json, region_ids_json, prompt_version, created_at
+                id, project_id, edit_type, slide_idx, entity_type, entity_id, before_json, after_json,
+                reason, preference_text, preference_source, preference_status, preference_error,
+                preference_kind, preference_scope, preference_reason, context_text, context_embedding_json,
+                edit_distance_ratio,
+                slide_context_json, kg_node_ids_json, region_ids_json, prompt_version, created_at
             FROM correction_memories
             WHERE {where_sql}
             ORDER BY created_at DESC, id DESC
@@ -1696,6 +1768,7 @@ def find_reusable_correction_memories(
         memories.append(
             {
                 "id": row["id"],
+                "project_id": row["project_id"],
                 "edit_type": row["edit_type"],
                 "slide_idx": row["slide_idx"],
                 "entity_type": row["entity_type"],
@@ -1703,6 +1776,16 @@ def find_reusable_correction_memories(
                 "before": _loads(row["before_json"], None),
                 "after": _loads(row["after_json"], None),
                 "reason": row["reason"],
+                "preference_text": row["preference_text"],
+                "preference_source": row["preference_source"],
+                "preference_status": row["preference_status"],
+                "preference_error": row["preference_error"],
+                "preference_kind": row["preference_kind"],
+                "preference_scope": row["preference_scope"],
+                "preference_reason": row["preference_reason"],
+                "context_text": row["context_text"],
+                "context_embedding": _loads(row["context_embedding_json"], []),
+                "edit_distance_ratio": row["edit_distance_ratio"],
                 "slide_context": _loads(row["slide_context_json"], {}),
                 "kg_node_ids": _loads(row["kg_node_ids_json"], []),
                 "region_ids": _loads(row["region_ids_json"], []),
@@ -1710,7 +1793,72 @@ def find_reusable_correction_memories(
                 "created_at": row["created_at"],
             }
         )
-    return memories
+    current = query_context if isinstance(query_context, dict) else {}
+
+    def scope_matches(memory: Dict[str, Any]) -> bool:
+        scope = str(memory.get("preference_scope") or "project")
+        stored = memory.get("slide_context") if isinstance(memory.get("slide_context"), dict) else {}
+        if scope == "user":
+            return True
+        if scope == "project":
+            return memory.get("project_id") == project_id
+        if scope == "mode":
+            return bool(current.get("mode")) and stored.get("mode") == current.get("mode")
+        if scope == "difficulty":
+            return bool(current.get("difficulty")) and stored.get("difficulty") == current.get("difficulty")
+        return False
+
+    reusable = [
+        row for row in memories
+        if row.get("preference_kind") == "preference"
+        and row.get("preference_text")
+        and scope_matches(row)
+    ]
+    query_embedding = create_context_embedding(query_context_text or "") if query_context_text else None
+    if query_embedding:
+        for index, memory in enumerate(reusable):
+            memory["context_similarity"] = cosine_similarity(query_embedding, memory.get("context_embedding") or [])
+            memory["_recency_order"] = index
+        reusable.sort(key=lambda row: (-float(row.get("context_similarity") or 0), int(row.get("_recency_order") or 0)))
+        for memory in reusable:
+            memory.pop("_recency_order", None)
+    return reusable[:safe_limit]
+
+
+def list_project_preferences(*, user_id: str, project_id: str, limit: int = 50) -> Dict[str, Any]:
+    safe_limit = max(1, min(int(limit or 50), 200))
+    with db_conn() as conn:
+        _require_owned_project(conn, project_id, user_id)
+        rows = conn.execute(
+            """
+            SELECT id, source_event_id, edit_type, slide_idx, reason,
+                   preference_text, preference_source, preference_status,
+                   preference_kind, preference_scope, preference_reason, context_text,
+                   edit_distance_ratio, kg_node_ids_json, slide_context_json, created_at
+            FROM correction_memories
+            WHERE user_id = :user_id
+              AND project_id = :project_id
+              AND preference_text IS NOT NULL
+              AND preference_text <> ''
+            ORDER BY created_at DESC, id DESC
+            LIMIT :limit
+            """,
+            {"user_id": user_id, "project_id": project_id, "limit": safe_limit},
+        ).fetchall()
+    items = []
+    for row in rows:
+        item = dict(row)
+        item["kg_node_ids"] = _loads(item.pop("kg_node_ids_json"), [])
+        item["slide_context"] = _loads(item.pop("slide_context_json"), {})
+        items.append(item)
+    return {
+        "project_id": project_id,
+        "preference_count": len(items),
+        "average_edit_distance_ratio": round(
+            sum(float(row.get("edit_distance_ratio") or 0) for row in items) / len(items), 4
+        ) if items else 0.0,
+        "items": items,
+    }
 
 
 def upsert_review_settings(
@@ -2147,6 +2295,16 @@ def _load_correction_memory_rows_for_export(
                 cm.before_json,
                 cm.after_json,
                 cm.reason,
+                cm.preference_text,
+                cm.preference_source,
+                cm.preference_status,
+                cm.preference_error,
+                cm.preference_kind,
+                cm.preference_scope,
+                cm.preference_reason,
+                cm.context_text,
+                cm.context_embedding_json,
+                cm.edit_distance_ratio,
                 cm.slide_context_json,
                 cm.kg_node_ids_json,
                 cm.region_ids_json,
@@ -2188,6 +2346,15 @@ def _research_jsonl_sample(row: Dict[str, Any], *, include_raw_text: bool, purpo
         "before": before,
         "after": after,
         "reason": row.get("reason"),
+        "preference": row.get("preference_text"),
+        "preference_source": row.get("preference_source"),
+        "preference_status": row.get("preference_status"),
+        "preference_error": row.get("preference_error"),
+        "preference_kind": row.get("preference_kind"),
+        "preference_scope": row.get("preference_scope"),
+        "preference_reason": row.get("preference_reason"),
+        "context_text": row.get("context_text"),
+        "edit_distance_ratio": row.get("edit_distance_ratio"),
         "slide_context": _loads(row.get("slide_context_json"), {}),
         "kg_node_ids": _loads(row.get("kg_node_ids_json"), []),
         "region_ids": _loads(row.get("region_ids_json"), []),

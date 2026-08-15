@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
 from pathlib import Path
 from typing import Optional
 
@@ -57,7 +58,12 @@ def build_paths(
     img_root = material_root / "img" / teaching_material_file_name
 
     # outputs/
-    outputs_root = project_root / "outputs"
+    configured_outputs_root = str(os.getenv("LECTURE_CRAFT_PIPELINE_OUTPUTS_ROOT") or "").strip()
+    outputs_root = (
+        Path(configured_outputs_root).expanduser().resolve()
+        if configured_outputs_root
+        else project_root / "outputs"
+    )
     outputs_root.mkdir(parents=True, exist_ok=True)
 
     # outputs/<run_name>/

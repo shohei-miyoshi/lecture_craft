@@ -396,6 +396,25 @@ Passkey は将来候補であるが，最低限の認証・認可・Cookie・CSR
 8. 修正ログ反映条件の比較を行う．
 9. 十分なデータ量が得られた後に fine-tuning / DPO を検討する．
 
+### 14.1 Preference memory pilot
+
+成長システムの成立性確認として，CIPHER の Latent Preference Induction を参考に，台本の編集前後からユーザの説明上の好みを LLM で自然言語として抽出する試作を追加した．固定ルールによる分類は行わない．KGは教材内容と説明構造，preferenceはユーザ個人の説明方法として独立に管理し，台本生成時に別々のコンテキストとして併用する．
+
+CIPHERをそのまま複製する部分は，token-level edit distance による更新判定，編集前後を入力としたLLMのlatent preference induction，生成文脈embeddingのcosine類似度による上位k件検索，LLMによる統合，次回promptへの挿入である．LectureCraft向けの追加は，編集を `preference / content_correction / local_instruction / uncertain` に分類して誤学習を抑えることと，適用範囲を `user / mode / difficulty / project / one_time` に分けることである．内容訂正と一回限りの指示は次回生成へ再利用しない．
+
+運用時は，初回生成でもKGを先に構築して教材内容の理解に用いる．好みの記憶はまだ存在しないため初回には影響しない．台本保存時に編集前後から好み候補を抽出し，二回目以降は同じユーザのうち適用範囲が一致する候補を文脈類似度順に取得・統合して台本生成へ渡す．したがってKGの有無やノードは，好みの抽出・検索条件には用いない．
+
+KG は初回生成から利用する．PDF のスライド画像を準備した直後に，台本生成前の教育 KG を LLM で構築し，概念，関係，スライド根拠を台本生成コンテキストへ追加する．初回は KG のみ，編集履歴が蓄積した2回目以降は KG と preference memory の両方を使う．既定条件は `global_slide` とする．
+
+- 一般化した preference 文．
+- LLM抽出の状態，モデル用prompt version，失敗理由．
+- 編集距離比率．
+- 修正前後，対象スライド・文，利用条件．
+
+`log_reuse_enabled` 条件では，抽出済み preference を次回生成の研究コンテキストへ明示的に追加する．プロジェクトごとの抽出結果は `GET /api/projects/{project_id}/preferences` で確認でき，生成 run には利用した correction memory 数と preference memory 数を記録する．
+
+この試作では，まず「KGのみ」と「KG + preference 反映あり」で台本の編集距離と編集時間が変化するかを確認する．複数 preference は LLM で統合する．今後は embedding による類似利用文脈検索，矛盾統合・忘却，台本以外の領域・対応付け・ハイライト修正への拡張を行う．十分なデータが得られた後に SFT / DPO を検討する．
+
 ## 15．既知の技術的課題
 
 - 現在の軽量 KG はルールベース抽出が中心で，教材構造理解として不十分である．

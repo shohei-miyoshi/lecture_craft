@@ -48,6 +48,7 @@ from .persistence import (
     guest_sessions_enabled,
     get_generation_conditions,
     get_latest_knowledge_graph_for_project,
+    list_project_preferences,
     get_project_pdf_artifact,
     get_project_slide_image_artifact,
     get_research_export_path,
@@ -769,6 +770,21 @@ def project_events_endpoint(project_id: str, request: Request, req: ProjectEvent
     )
 
 
+@app.get("/api/projects/{project_id}/preferences")
+def project_preferences_endpoint(
+    project_id: str,
+    request: Request,
+    limit: int = Query(default=50, ge=1, le=200),
+    x_kenkyu_session: str | None = Header(default=None),
+):
+    session = _require_session(request, x_kenkyu_session)
+    return list_project_preferences(
+        project_id=project_id,
+        user_id=session["user"]["id"],
+        limit=limit,
+    )
+
+
 @app.post("/api/projects/{project_id}/runs")
 def project_run_create_endpoint(
     project_id: str,
@@ -792,12 +808,26 @@ def project_run_create_endpoint(
     review_flow_enabled = conditions.get("review_flow_enabled") is not False
     layout_review_enabled = review_flow_enabled and req.mode == "hl" and req.layout_review_enabled
     script_review_enabled = review_flow_enabled and req.script_review_enabled
+    project_context = get_project_v2(project_id, user_id=session["user"]["id"])
     correction_memories = (
         find_reusable_correction_memories(
             user_id=session["user"]["id"],
             experiment_id=session.get("experiment_id"),
             project_id=project_id,
             limit=8,
+            query_context_text=(
+                f"mode={req.mode}\n"
+                f"difficulty={req.difficulty}\n"
+                f"detail={req.detail}\n"
+                f"usage_context={req.usage_context}\n"
+                f"project_name={project_context.get('name') or ''}"
+            ),
+            query_context={
+                "mode": req.mode,
+                "difficulty": req.difficulty,
+                "detail": req.detail,
+                "usage_context": req.usage_context,
+            },
         )
         if conditions.get("log_reuse_enabled")
         else []
@@ -835,6 +865,9 @@ def project_run_create_endpoint(
     submitted["generation_run"] = get_generation_run_v2(run["id"], user_id=session["user"]["id"])
     submitted["experiment_condition"] = conditions
     submitted["correction_memory_count"] = len(correction_memories)
+    submitted["preference_memory_count"] = sum(
+        1 for row in correction_memories if row.get("preference_text")
+    )
     return JSONResponse(status_code=202, content=submitted)
 
 

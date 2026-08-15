@@ -40,6 +40,12 @@ from .storage import get_artifact_store
 from auto_lecture import config as auto_config
 from auto_lecture.audio_only_lecture import run_audio_only_lecture
 from auto_lecture.gpt_client import create_client
+from auto_lecture.gpt_utils import (
+    build_responses_system_message,
+    build_responses_user_message,
+    call_responses_text,
+)
+from .preference_memory import consolidate_preferences
 from auto_lecture.paths import ProjectPaths, build_paths
 from auto_lecture.tts_simple import clean_script_text, concat_mp3_with_ffmpeg, normalize_for_tts
 from auto_lecture.utils.pdf_utils import pdf_to_images
@@ -133,6 +139,10 @@ def generate_media(
             material_root=plan.material_root,
             output_root_name=output_root_name,
         )
+        conditions = normalize_generation_conditions(req.generation_conditions)
+        if conditions.get("kg_mode") != "off":
+            report(28, "台本生成前のナレッジグラフを構築しています")
+            ensure_pre_generation_knowledge_graph(paths, kg_mode=conditions["kg_mode"])
         write_research_generation_context(paths, req)
 
         if req.mode == "audio":
@@ -1297,6 +1307,104 @@ def get_audio_material_worker_count() -> int:
         return 1
 
 
+def _pre_generation_kg_path(paths: ProjectPaths) -> Path:
+    return Path(paths.output_dir) / "pre_generation_knowledge_graph.json"
+
+
+def _extract_json_object(text: str) -> Dict[str, Any]:
+    raw = str(text or "").strip()
+    start = raw.find("{")
+    end = raw.rfind("}")
+    if start < 0 or end <= start:
+        raise ValueError("KG response did not contain a JSON object")
+    value = json.loads(raw[start:end + 1])
+    if not isinstance(value, dict):
+        raise ValueError("KG response must be a JSON object")
+    return value
+
+
+def _normalize_pre_generation_graph(value: Dict[str, Any], *, kg_mode: str) -> Dict[str, Any]:
+    nodes = []
+    seen_nodes: set[str] = set()
+    for row in value.get("nodes") or []:
+        if not isinstance(row, dict):
+            continue
+        label = re.sub(r"\s+", " ", str(row.get("label") or row.get("id") or "")).strip()[:120]
+        if not label:
+            continue
+        node_id = str(row.get("id") or f"concept:{hashlib.sha256(label.encode('utf-8')).hexdigest()[:12]}")[:160]
+        if node_id in seen_nodes:
+            continue
+        seen_nodes.add(node_id)
+        slide_refs = sorted({int(v) for v in (row.get("slide_refs") or []) if str(v).isdigit()})
+        nodes.append({"id": node_id, "label": label, "type": "concept", "slide_refs": slide_refs})
+    edges = []
+    for row in value.get("edges") or []:
+        if not isinstance(row, dict):
+            continue
+        source = str(row.get("source") or "")
+        target = str(row.get("target") or "")
+        if source not in seen_nodes or target not in seen_nodes or source == target:
+            continue
+        edges.append({
+            "source": source,
+            "target": target,
+            "relation": re.sub(r"\s+", "_", str(row.get("relation") or "related_to").strip())[:80],
+            "slide_refs": sorted({int(v) for v in (row.get("slide_refs") or []) if str(v).isdigit()}),
+        })
+    slide_refs = []
+    for slide_idx in sorted({idx for node in nodes for idx in node["slide_refs"]}):
+        slide_refs.append({
+            "slide_idx": slide_idx,
+            "node_ids": [node["id"] for node in nodes if slide_idx in node["slide_refs"]],
+        })
+    return {
+        "version": "pre_generation_kg_v1",
+        "kg_mode": kg_mode,
+        "nodes": nodes,
+        "edges": edges,
+        "slide_refs": slide_refs,
+        "sentence_refs": [],
+        "region_refs": [],
+        "quality_status": "llm_generated_before_script",
+        "created_at": datetime.now().isoformat(timespec="seconds"),
+    }
+
+
+def ensure_pre_generation_knowledge_graph(paths: ProjectPaths, *, kg_mode: str) -> Dict[str, Any]:
+    path = _pre_generation_kg_path(paths)
+    cached = load_json_file(path, None)
+    if isinstance(cached, dict) and cached.get("nodes"):
+        return cached
+    image_paths = sorted(
+        [path for path in Path(paths.img_root).iterdir() if path.suffix.lower() in {".png", ".jpg", ".jpeg"}],
+        key=lambda value: value.name,
+    )
+    if not image_paths:
+        raise ApiError(500, "PRE_GENERATION_KG_INPUT_MISSING", "KG生成用のスライド画像がありません。")
+    prompt = (
+        "講義スライド画像から、台本生成前に使う教育用ナレッジグラフを作成してください。"
+        "重要概念と、prerequisite_of / explains / example_of / contrasts_with / part_of / used_for / step_before "
+        "の関係を抽出してください。各概念・関係には根拠となる0始まりのslide_refsを付けてください。"
+        "スライドに根拠のない概念を追加しないでください。JSON以外は出力しないでください。\n"
+        '{"nodes":[{"id":"concept:...","label":"...","slide_refs":[0]}],'
+        '"edges":[{"source":"concept:...","target":"concept:...","relation":"prerequisite_of","slide_refs":[0]}]}'
+    )
+    _response, result = call_responses_text(
+        create_client(),
+        modelname=os.getenv("LECTURE_CRAFT_MODEL_KG", auto_config.API_MODEL_EXPLANATION),
+        messages=[
+            build_responses_system_message("講義スライドから根拠付き教育KGを厳密なJSONで構築してください。"),
+            build_responses_user_message(prompt, image_paths),
+        ],
+    )
+    graph = _normalize_pre_generation_graph(_extract_json_object(result), kg_mode=kg_mode)
+    if not graph["nodes"]:
+        raise ApiError(500, "PRE_GENERATION_KG_EMPTY", "台本生成前KGから概念を抽出できませんでした。")
+    path.write_text(json.dumps(graph, ensure_ascii=False, indent=2), encoding="utf-8")
+    return graph
+
+
 def write_research_generation_context(paths: ProjectPaths, req: GenerateRequest) -> None:
     conditions = normalize_generation_conditions(req.generation_conditions)
     memories = req.correction_memories if isinstance(req.correction_memories, list) else []
@@ -1304,17 +1412,30 @@ def write_research_generation_context(paths: ProjectPaths, req: GenerateRequest)
         return
     memory_rows = []
     for row in memories[:8]:
-        if not isinstance(row, dict):
+        if (
+            not isinstance(row, dict)
+            or row.get("preference_kind") != "preference"
+            or not row.get("preference_text")
+        ):
             continue
         memory_rows.append(
             {
-                "edit_type": row.get("edit_type"),
-                "slide_idx": row.get("slide_idx"),
-                "before": row.get("before"),
-                "after": row.get("after"),
-                "reason": row.get("reason"),
+                "preference": row.get("preference_text"),
+                "preference_source": row.get("preference_source"),
+                "preference_scope": row.get("preference_scope"),
+                "preference_reason": row.get("preference_reason"),
+                "context_similarity": row.get("context_similarity"),
             }
         )
+    consolidated_preference = consolidate_preferences(memory_rows)
+    pre_generation_graph = load_json_file(_pre_generation_kg_path(paths), {})
+    kg_summary = {
+        "nodes": [
+            {"id": row.get("id"), "label": row.get("label"), "slide_refs": row.get("slide_refs") or []}
+            for row in (pre_generation_graph.get("nodes") or [])[:40]
+        ],
+        "edges": (pre_generation_graph.get("edges") or [])[:60],
+    } if isinstance(pre_generation_graph, dict) else {}
     text = (
         "[LectureCraft Research Context]\n"
         "以下は実験条件と過去の修正傾向です。台本生成時は，スライド内容への忠実性を優先しつつ，"
@@ -1323,8 +1444,16 @@ def write_research_generation_context(paths: ProjectPaths, req: GenerateRequest)
         f"- log_reuse_enabled: {conditions.get('log_reuse_enabled')}\n"
         f"- prompt_strategy_version: {conditions.get('prompt_strategy_version')}\n"
         f"- reusable_correction_count: {len(memory_rows)}\n\n"
-        "[Reusable Corrections]\n"
-        f"{json.dumps(memory_rows, ensure_ascii=False, indent=2)}\n"
+        "[Pre-generation Knowledge Graph]\n"
+        f"{json.dumps(kg_summary, ensure_ascii=False, indent=2)}\n\n"
+        "[Learned Preferences]\n"
+        + (f"{consolidated_preference}\n" if consolidated_preference else "")
+        + ("[Retrieved Preference Evidence]\n" if memory_rows else "")
+        + "\n".join(
+            f"- {row['preference']}"
+            for row in memory_rows if row.get("preference")
+        )
+        + "\n"
     )
     for root in (Path(paths.output_dir), Path(paths.explanation_save_dir)):
         try:
@@ -1711,13 +1840,26 @@ def attach_research_generation_outputs(
     payload = dict(response)
     conditions = normalize_generation_conditions(req.generation_conditions)
     kg_mode = conditions.get("kg_mode", "off")
-    graph = build_lightweight_knowledge_graph(payload, kg_mode=kg_mode)
+    pre_generation_graph = load_json_file(
+        Path(plan.output_root_name) / "pre_generation_knowledge_graph.json",
+        None,
+    )
+    graph = (
+        pre_generation_graph
+        if isinstance(pre_generation_graph, dict) and pre_generation_graph.get("nodes")
+        else build_lightweight_knowledge_graph(payload, kg_mode=kg_mode)
+    )
     if graph is not None:
         payload["knowledge_graph"] = graph
     if conditions.get("log_reuse_enabled"):
+        preference_count = sum(
+            1 for row in (req.correction_memories or [])
+            if isinstance(row, dict) and row.get("preference_text")
+        )
         payload["generation_ref"] = {
             **(payload.get("generation_ref") or {}),
             "correction_memory_count": len(req.correction_memories or []),
+            "preference_memory_count": preference_count,
             "prompt_strategy_version": conditions.get("prompt_strategy_version"),
         }
     persist_generation_research_outputs(req, plan, payload, conditions)
@@ -1726,7 +1868,7 @@ def attach_research_generation_outputs(
 
 def normalize_generation_conditions(value: Any) -> Dict[str, Any]:
     raw = value if isinstance(value, dict) else {}
-    kg_mode = str(raw.get("kg_mode") or "off")
+    kg_mode = str(raw.get("kg_mode") or "global_slide")
     if kg_mode not in VALID_KG_MODES:
         kg_mode = "off"
     return {
@@ -1915,6 +2057,11 @@ def persist_generation_research_outputs(
         "sentence_count": len(response.get("sentences") or []),
         "highlight_count": len(response.get("highlights") or []),
         "kg_mode": conditions.get("kg_mode"),
+        "correction_memory_count": len(req.correction_memories or []),
+        "preference_memory_count": sum(
+            1 for row in (req.correction_memories or [])
+            if isinstance(row, dict) and row.get("preference_text")
+        ),
         "knowledge_graph": {
             "node_count": len((response.get("knowledge_graph") or {}).get("nodes") or []),
             "edge_count": len((response.get("knowledge_graph") or {}).get("edges") or []),

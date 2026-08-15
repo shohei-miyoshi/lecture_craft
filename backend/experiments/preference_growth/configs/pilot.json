@@ -1,0 +1,50 @@
+{
+  "experiment_id": "preference-growth-pilot-v1",
+  "seed_label": "fixed-protocol-20260815",
+  "mode": "video",
+  "detail": "standard",
+  "difficulty": "basic",
+  "kg_mode": "global_slide",
+  "rounds": 3,
+  "personas": [
+    {
+      "id": "definition_first",
+      "label": "定義重視",
+      "private_editing_policy": "初めて登場する専門用語には、意味を変えずに短い定義を一文以内で加える。すでに定義済みの語や自明な語には追加しない。"
+    },
+    {
+      "id": "concrete_example",
+      "label": "具体例重視",
+      "private_editing_policy": "抽象的で理解しにくい説明には、内容に忠実な身近な具体例を一つ加える。すでに十分な例がある場合や例が不自然な場合は追加しない。"
+    }
+  ],
+  "materials": [
+    {
+      "id": "database_foundations",
+      "title": "Database Foundations",
+      "slides": [
+        ["Relational databases", "Tables organize records into rows and columns", "Keys identify and connect records"],
+        ["Primary and foreign keys", "A primary key uniquely identifies a row", "A foreign key references another table"],
+        ["Normalization", "Normalization reduces duplicated data", "Third normal form separates non-key dependencies"]
+      ]
+    },
+    {
+      "id": "network_security",
+      "title": "Network Security Basics",
+      "slides": [
+        ["Confidentiality, integrity, availability", "Security goals protect information and services"],
+        ["Encryption", "Symmetric encryption shares one secret key", "Public-key encryption uses a key pair"],
+        ["Authentication", "Passwords are one factor", "Multi-factor authentication combines different factor types"]
+      ]
+    },
+    {
+      "id": "machine_learning",
+      "title": "Machine Learning Workflow",
+      "slides": [
+        ["Supervised learning", "Models learn from labeled examples", "Classification and regression solve different tasks"],
+        ["Training and validation", "Training data fits model parameters", "Validation data supports model selection"],
+        ["Overfitting", "A model may memorize training examples", "Regularization and more data can improve generalization"]
+      ]
+    }
+  ]
+}

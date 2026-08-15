@@ -5,13 +5,26 @@ import json
 import os
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
+from types import SimpleNamespace
 
 from app.db import db_conn, init_db
 from app.jobs import JobManager, JobRecord
-from app.models import PreviewAudioRequest
-from app.persistence import export_research_jsonl, save_project_events
-from app.service import ApiError, ensure_preview_sentence_audio
+from app.models import GenerateRequest, PreviewAudioRequest
+from app.persistence import (
+    export_research_jsonl,
+    find_reusable_correction_memories,
+    list_project_preferences,
+    save_project_events,
+)
+from app.preference_memory import (
+    build_latent_preference_prompt,
+    cosine_similarity,
+    induce_preference_from_edit,
+    normalized_edit_distance,
+)
+from app.service import ApiError, ensure_preview_sentence_audio, write_research_generation_context
 from app.storage import get_artifact_store
 from app.storage_persistence import (
     apply_generated_result,
@@ -79,6 +92,118 @@ class StorageV2Tests(unittest.TestCase):
             media_type="application/pdf",
         )
         return get_project_v2(project["id"], "user_a"), uploaded
+
+    def test_preference_memory_pilot_extracts_and_lists_preferences(self) -> None:
+        project, _uploaded = self._project_with_pdf()
+        inferred = {
+            "preference_text": "専門用語を初めて使うときは短い定義を加える。",
+            "preference_source": "cipher_lpi_llm_v1",
+            "preference_status": "inferred",
+            "preference_error": None,
+            "edit_distance_ratio": 0.5,
+            "prompt_version": "cipher_lpi_lecturecraft_v1",
+            "preference_kind": "preference",
+            "preference_scope": "user",
+            "preference_reason": "専門用語の定義を追加したため",
+            "context_text": "mode=hl\nscript=ニューラルネットワークを説明します。",
+            "context_embedding": [1.0, 0.0],
+        }
+        with patch("app.persistence.induce_preference_from_edit", return_value=inferred) as induce:
+            save_project_events(
+                project_id=project["id"],
+                user_id="user_a",
+                events=[{
+                    "external_event_id": "preference-event-1",
+                    "action_type": "sentence_text",
+                    "slide_idx": 0,
+                    "entity_type": "sentence",
+                    "entity_id": "s1",
+                    "before": {"text": "ニューラルネットワークを説明します。"},
+                    "after": {"text": "ニューラルネットワークは、人間の神経回路を参考にした計算モデルです。"},
+                }],
+            )
+        self.assertNotIn("kg_concepts", induce.call_args.kwargs)
+        memories = find_reusable_correction_memories(
+            user_id="user_a", experiment_id=None, project_id=project["id"], limit=8
+        )
+        self.assertEqual(len(memories), 1)
+        self.assertIn("短い定義", memories[0]["preference_text"])
+        self.assertEqual(memories[0]["preference_source"], "cipher_lpi_llm_v1")
+        self.assertEqual(memories[0]["preference_kind"], "preference")
+        self.assertEqual(memories[0]["preference_scope"], "user")
+        self.assertEqual(memories[0]["kg_node_ids"], [])
+        self.assertGreater(memories[0]["edit_distance_ratio"], 0)
+
+        second_project, _second_upload = self._project_with_pdf()
+        cross_project = find_reusable_correction_memories(
+            user_id="user_a",
+            experiment_id=None,
+            project_id=second_project["id"],
+            limit=8,
+            query_context={"mode": "hl", "difficulty": "basic"},
+        )
+        self.assertEqual(len(cross_project), 1)
+        self.assertEqual(cross_project[0]["preference_scope"], "user")
+
+        summary = list_project_preferences(user_id="user_a", project_id=project["id"])
+        self.assertEqual(summary["preference_count"], 1)
+        self.assertGreater(summary["average_edit_distance_ratio"], 0)
+
+    def test_preference_prompt_uses_edit_context_without_kg(self) -> None:
+        prompt_text = build_latent_preference_prompt(
+            before={"text": "ニューラルネットワークを説明します。"},
+            after={"text": "ニューラルネットワークは計算モデルです。"},
+            slide_context={"slide_idx": 0},
+        )
+        self.assertIn("元の台本", prompt_text)
+        self.assertIn("ユーザ修正版", prompt_text)
+        self.assertIn("ニューラルネットワーク", prompt_text)
+        self.assertIn("content_correction", prompt_text)
+        self.assertIn('"scope"', prompt_text)
+        self.assertNotIn("knowledge graph", prompt_text.lower())
+        self.assertGreater(normalized_edit_distance("長い説明です。", "短い説明。"), 0)
+
+    def test_preference_reuse_and_similarity_helpers(self) -> None:
+        with patch.dict(os.environ, {"LECTURE_CRAFT_PREFERENCE_EDIT_THRESHOLD": "1"}):
+            reused = induce_preference_from_edit(
+                before="用語を説明します。",
+                after="用語を少し説明します。",
+                applied_preference="専門用語には短い定義を添える。",
+                applied_preference_scope="mode",
+            )
+        self.assertEqual(reused["preference_status"], "reused")
+        self.assertEqual(reused["preference_kind"], "preference")
+        self.assertEqual(reused["preference_scope"], "mode")
+        self.assertAlmostEqual(cosine_similarity([1, 0], [1, 0]), 1.0)
+        self.assertAlmostEqual(cosine_similarity([1, 0], [0, 1]), 0.0)
+
+    def test_generation_context_contains_preferences_but_not_raw_edits(self) -> None:
+        root = Path(self.temp_dir.name)
+        paths = SimpleNamespace(
+            output_dir=root / "pipeline",
+            explanation_save_dir=root / "pipeline" / "lecture_outputs" / "lecture_texts",
+        )
+        req = GenerateRequest(
+            filename="context-test.pdf",
+            detail="standard",
+            difficulty="basic",
+            mode="video",
+            generation_run_id="run_context_test",
+            generation_job_id="job_context_test",
+            generation_conditions={"kg_mode": "off", "log_reuse_enabled": True},
+            correction_memories=[{
+                "before": {"text": "RAW_BEFORE_SECRET"},
+                "after": {"text": "RAW_AFTER_SECRET"},
+                "preference_kind": "preference",
+                "preference_scope": "user",
+                "preference_text": "専門用語には短い定義を添える。",
+            }],
+        )
+        write_research_generation_context(paths, req)
+        context = (Path(paths.output_dir) / "research_generation_context.txt").read_text(encoding="utf-8")
+        self.assertIn("専門用語には短い定義", context)
+        self.assertNotIn("RAW_BEFORE_SECRET", context)
+        self.assertNotIn("RAW_AFTER_SECRET", context)
 
     def _project_run_with_slide(self, mode: str):
         project, uploaded = self._project_with_pdf()

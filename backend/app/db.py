@@ -363,6 +363,16 @@ def init_db() -> None:
             before_json TEXT,
             after_json TEXT,
             reason TEXT,
+            preference_text TEXT,
+            preference_source TEXT,
+            preference_status TEXT,
+            preference_error TEXT,
+            preference_kind TEXT,
+            preference_scope TEXT,
+            preference_reason TEXT,
+            context_text TEXT,
+            context_embedding_json TEXT NOT NULL DEFAULT '[]',
+            edit_distance_ratio REAL,
             slide_context_json TEXT NOT NULL DEFAULT '{}',
             kg_node_ids_json TEXT NOT NULL DEFAULT '[]',
             region_ids_json TEXT NOT NULL DEFAULT '[]',
@@ -676,6 +686,16 @@ def init_db() -> None:
         _ensure_column(conn, "edit_events", "experiment_id", "TEXT")
         _ensure_column(conn, "edit_events", "generation_run_id", "TEXT")
         _ensure_column(conn, "correction_memories", "generation_run_id", "TEXT")
+        _ensure_column(conn, "correction_memories", "preference_text", "TEXT")
+        _ensure_column(conn, "correction_memories", "preference_source", "TEXT")
+        _ensure_column(conn, "correction_memories", "preference_status", "TEXT")
+        _ensure_column(conn, "correction_memories", "preference_error", "TEXT")
+        _ensure_column(conn, "correction_memories", "preference_kind", "TEXT")
+        _ensure_column(conn, "correction_memories", "preference_scope", "TEXT")
+        _ensure_column(conn, "correction_memories", "preference_reason", "TEXT")
+        _ensure_column(conn, "correction_memories", "context_text", "TEXT")
+        _ensure_column(conn, "correction_memories", "context_embedding_json", "TEXT NOT NULL DEFAULT '[]'")
+        _ensure_column(conn, "correction_memories", "edit_distance_ratio", "REAL")
         conn.raw.execute(
             "CREATE INDEX IF NOT EXISTS idx_edit_events_generation_run ON edit_events(generation_run_id, created_at)"
         )
@@ -734,7 +754,7 @@ def init_db() -> None:
                     "key": "generation_conditions_global",
                     "value_json": _json_text(
                         {
-                            "kg_mode": "off",
+                            "kg_mode": "global_slide",
                             "log_reuse_enabled": False,
                             "review_flow_enabled": True,
                             "prompt_strategy_version": "baseline_v1",

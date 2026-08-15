@@ -161,7 +161,7 @@ class ExperimentJoinRequest(BaseModel):
 
 
 class GenerationConditionSettings(BaseModel):
-    kg_mode: Literal["off", "slide", "global", "global_slide"] = "off"
+    kg_mode: Literal["off", "slide", "global", "global_slide"] = "global_slide"
     log_reuse_enabled: bool = False
     review_flow_enabled: bool = True
     prompt_strategy_version: str = "baseline_v1"
