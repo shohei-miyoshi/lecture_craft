@@ -11,7 +11,7 @@ LectureCraftの好み記憶だけを評価するローカル実験である。KG
 
 ## パイロット
 
-2種類の模擬ユーザについて3回の連続利用を行う。1回目は履歴なし、2・3回目は control（好みなし）と treatment（過去の好みあり）を同じ教材・同じKGで生成する。模擬ユーザの編集方針はシステムに直接与えず、編集前後だけから既存のLLM preference inductionに推定させる。
+定義重視・具体例重視・結論先行・簡潔さ重視の模擬ユーザについて3回の連続利用を行う。1回目は履歴なし、2・3回目は control（好みなし）と treatment（過去の好みあり）を同じ教材・同じKGで生成する。模擬ユーザの編集方針はシステムに直接与えず、編集前後だけから既存のLLM preference inductionに推定させる。
 
 ```bash
 cd backend
@@ -25,6 +25,13 @@ cd backend
 
 ```bash
 .venv/bin/python experiments/preference_growth/analyze_results.py \
+  --run-dir experiments/preference_growth/local/<run-id>
+```
+
+編集前後、編集理由、正解カテゴリ、抽出された好みを後から確認できるローカル過程レポートは以下で生成する。Markdown版は閲覧用、JSON版は再分析用であり、どちらも `local/` 以下に置かれてGit共有されない。
+
+```bash
+.venv/bin/python experiments/preference_growth/build_process_report.py \
   --run-dir experiments/preference_growth/local/<run-id>
 ```
 
